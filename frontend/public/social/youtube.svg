@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <defs>
+    <linearGradient id="ytGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff0000"/>
+      <stop offset="100%" stop-color="#cc0000"/>
+    </linearGradient>
+    <filter id="ytShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#cc0000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+  <rect width="92" height="92" x="4" y="4" rx="24" fill="url(#ytGrad)" filter="url(#ytShadow)" stroke="rgba(255,255,255,0.2)" stroke-width="1.5"/>
+  <path d="M70.5 38.5c-.5-2-2.1-3.6-4.1-4.1C62.8 33.5 50 33.5 50 33.5s-12.8 0-16.4.9c-2 .5-3.6 2.1-4.1 4.1C28.5 42.1 28.5 50 28.5 50s0 7.9 1 11.5c.5 2 2.1 3.6 4.1 4.1 3.6.9 16.4.9 16.4.9s12.8 0 16.4-.9c2-.5 3.6-2.1 4.1-4.1 1-3.6 1-11.5 1-11.5s0-7.9-1-11.5z" fill="#ffffff"/>
+  <polygon points="45,43 45,57 57,50" fill="#cc0000"/>
+</svg>

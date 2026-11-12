@@ -1,0 +1,62 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Dependencies & Environments
+node_modules
+node_modules/
+venv
+venv/
+env
+env/
+.venv
+.venv/
+ENV
+ENV/
+__pycache__/
+*.pyc
+*.py[cod]
+*$py.class
+
+# Database
+db.sqlite3
+db.sqlite3-journal
+*.sqlite3
+
+# Builds
+dist/
+dist-ssr/
+build/
+
+# Media & Uploads
+backend/media/
+media/
+staticfiles/
+
+# IDE & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Environment variables & Secrets
+.env
+.env.local
+.env.*.local
+.env.*
+*.env
+*.pem
+*.key
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*

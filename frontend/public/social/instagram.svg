@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <defs>
+    <radialGradient id="igGrad" cx="30%" cy="100%" r="130%">
+      <stop offset="0%" stop-color="#ffdc80"/>
+      <stop offset="25%" stop-color="#f56040"/>
+      <stop offset="50%" stop-color="#fd1d1d"/>
+      <stop offset="75%" stop-color="#e1306c"/>
+      <stop offset="100%" stop-color="#833ab4"/>
+    </radialGradient>
+    <filter id="igShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#833ab4" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+  <rect width="92" height="92" x="4" y="4" rx="24" fill="url(#igGrad)" filter="url(#igShadow)" stroke="rgba(255,255,255,0.2)" stroke-width="1.5"/>
+  <rect width="44" height="44" x="28" y="28" rx="13" fill="none" stroke="#ffffff" stroke-width="4.5"/>
+  <circle cx="50" cy="50" r="10.5" fill="none" stroke="#ffffff" stroke-width="4.5"/>
+  <circle cx="62" cy="38" r="2.8" fill="#ffffff"/>
+</svg>
