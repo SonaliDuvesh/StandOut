@@ -19,6 +19,16 @@
 
 ---
 
+<p align="center">
+  <img src="demo/demo1.png" alt="StandOut - Midnight Navy Theme" width="100%" />
+</p>
+<p align="center">
+  <img src="demo/demo2.png" alt="StandOut - Soft Pink Theme" width="49.5%" />
+  <img src="demo/demo3.png" alt="StandOut - Soft Cream Theme" width="49.5%" />
+</p>
+
+---
+
 </div>
 
 ## Overview
@@ -230,7 +240,7 @@ The REST API will be accessible at:
 
 ---
 
-## 📡 API Endpoints & Use Cases
+## API Endpoints & Use Cases
 
 | Method | Endpoint | Primary Use Case |
 | :--- | :--- | :--- |
@@ -243,7 +253,7 @@ The REST API will be accessible at:
 
 ---
 
-## 🛡️ Privacy & Security
+## Privacy & Security
 
 - **Client-Side Cryptographic URL Fragments**: Data embedded in `#data=...` fragments is parsed strictly on the client side. By standard RFC 3986 specification, URL fragments are **never sent to HTTP servers**, keeping your shared portfolio payload private from intermediate proxy logs.
 - **Draft Isolation**: Public portfolio viewing runs in a sandboxed state that guarantees a visitor's local draft is never contaminated or overwritten by third-party links.
@@ -256,9 +266,3 @@ This project is proprietary and confidential. **All Rights Reserved** to **Sonal
 
 No individual or entity may copy, reproduce, modify, distribute, or use this software without the prior express written permission of the author. See [LICENSE](LICENSE) for full legal terms.
 
----
-
-<div align="center">
-  Crafted with ❤️ by <strong>Sonali Duvesh</strong><br>
-  <a href="https://github.com/SonaliDuvesh">GitHub</a>
-</div>
