@@ -38,3 +38,7 @@ CREATE POLICY "Allow public update to published portfolios"
     FOR UPDATE
     USING (true)
     WITH CHECK (true);
+
+-- 6. Grant table permissions to anon and authenticated roles (fixes code 42501 permission denied)
+GRANT ALL ON TABLE public.published_portfolios TO anon, authenticated, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
