@@ -6,7 +6,7 @@ import {
     Search, Plus, Trash2, ArrowUp, ArrowDown,
     ExternalLink, Upload, Star, GitFork, Check, RefreshCw, RotateCcw,
     ChevronDown, CheckSquare, Square, Sparkles, Eye, EyeOff,
-    Key, Lock, X, ShieldCheck
+    Key, Lock, X, ShieldCheck, Info
 } from 'lucide-react';
 
 const ProjectsTab = () => {
@@ -31,6 +31,8 @@ const ProjectsTab = () => {
     const [githubToken, setGithubToken] = useState(() => githubAPI.getToken());
     const [showToken, setShowToken] = useState(false);
     const [showTokenField, setShowTokenField] = useState(() => Boolean(githubAPI.getToken()));
+    const [showTokenGuide, setShowTokenGuide] = useState(false);
+    const guideTimeoutRef = useRef(null);
 
     const [uploadingProjId, setUploadingProjId] = useState(null);
     const fileInputRefs = useRef({});
@@ -425,8 +427,84 @@ const ProjectsTab = () => {
                             </div>
 
                             <div className="text-[11px] text-navy-500 dark:text-soft-cream-400 flex items-center justify-between flex-wrap gap-2 leading-relaxed">
-                                <span className="flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
-                                    <ShieldCheck className="w-3.5 h-3.5" />
+                                <span className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 relative">
+                                    {/* Interactive info mark with hover & click tooltip */}
+                                    <div
+                                        className="relative inline-flex items-center"
+                                        onMouseEnter={() => {
+                                            if (guideTimeoutRef.current) clearTimeout(guideTimeoutRef.current);
+                                            setShowTokenGuide(true);
+                                        }}
+                                        onMouseLeave={() => {
+                                            guideTimeoutRef.current = setTimeout(() => setShowTokenGuide(false), 250);
+                                        }}
+                                    >
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowTokenGuide(!showTokenGuide)}
+                                            className="p-1 rounded-full bg-emerald-100/80 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 dark:hover:bg-emerald-900 transition-colors cursor-pointer inline-flex items-center justify-center border border-emerald-300/60 dark:border-emerald-700/60 focus:outline-none"
+                                            title="Click or hover: How to get GitHub API token in 4 easy steps"
+                                            aria-label="How to get GitHub API token"
+                                        >
+                                            <Info className="w-3.5 h-3.5" />
+                                        </button>
+
+                                        {showTokenGuide && (
+                                            <div
+                                                className="absolute left-0 bottom-full mb-2 z-50 w-72 sm:w-88 p-4 rounded-2xl bg-white/95 dark:bg-navy-900/95 border border-soft-cream-300 dark:border-navy-700 shadow-2xl backdrop-blur-md text-navy-900 dark:text-soft-cream-50 animate-scale-up space-y-2.5 text-xs select-text cursor-default"
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                <div className="flex items-center justify-between pb-2 border-b border-soft-cream-200 dark:border-navy-800">
+                                                    <span className="font-bold flex items-center gap-1.5 text-golden-600 dark:text-golden-400 text-xs">
+                                                        <Info className="w-3.5 h-3.5" />
+                                                        <span>How to Get a Free GitHub API Token</span>
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowTokenGuide(false)}
+                                                        className="p-1 rounded-md text-navy-400 hover:text-navy-700 dark:hover:text-soft-cream-200 cursor-pointer"
+                                                        aria-label="Close guide"
+                                                    >
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+
+                                                <p className="text-[11px] text-navy-600 dark:text-soft-cream-300">
+                                                    Takes under 30 seconds. No special repository permissions or scopes needed:
+                                                </p>
+
+                                                <ol className="space-y-1.5 text-[11px] text-navy-700 dark:text-soft-cream-200 list-decimal list-inside leading-relaxed">
+                                                    <li>
+                                                        Log in to <strong>GitHub.com</strong> → click your profile avatar → <strong>Settings</strong>.
+                                                    </li>
+                                                    <li>
+                                                        In the left sidebar, click <strong>Developer Settings</strong> → <strong>Personal access tokens</strong> → <strong>Tokens (classic)</strong>.
+                                                    </li>
+                                                    <li>
+                                                        Click <strong>Generate new token (classic)</strong>, enter any note (e.g. <em>StandOut</em>), and leave all scope checkboxes <strong>unchecked</strong>.
+                                                    </li>
+                                                    <li>
+                                                        Click <strong>Generate token</strong> at the bottom, copy your <code>ghp_...</code> key, and paste it here!
+                                                    </li>
+                                                </ol>
+
+                                                <div className="pt-2 border-t border-soft-cream-200 dark:border-navy-800 flex items-center justify-between gap-2">
+                                                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                                                        Unlocks 5,000 req/hr
+                                                    </span>
+                                                    <a
+                                                        href="https://github.com/settings/tokens/new?description=StandOut+Portfolio+Sync&scopes="
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="btn-primary py-1 px-2.5 text-[11px] font-bold inline-flex items-center gap-1 shrink-0"
+                                                    >
+                                                        <span>Open Token Page</span>
+                                                        <ExternalLink className="w-3 h-3" />
+                                                    </a>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                     <span>Stored locally in your browser only. Never exposed in code, public URLs, or server logs.</span>
                                 </span>
                                 <a
