@@ -29,7 +29,10 @@ import {
     getPortfolioFromSupabase,
     getLatestPortfolioFromSupabase,
     listPortfoliosFromSupabase,
-    isSupabaseConfigured
+    isSupabaseConfigured,
+    getStoredPasskey,
+    setStoredPasskey,
+    generatePasskey,
 } from '../services/supabase.js';
 
 const PortfolioContext = createContext(null);
@@ -76,16 +79,6 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
         }
         return DEFAULT_PORTFOLIO;
     });
-
-    // Initial online hydration from Supabase
-    useEffect(() => {
-        if (!isSupabaseConfigured()) return;
-        getPortfolioFromSupabase().then(sbData => {
-            if (sbData) {
-                setPortfolio(mergePortfolio(sbData));
-            }
-        }).catch(() => {});
-    }, []);
 
     const [allPortfolios, setAllPortfolios] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -666,7 +659,7 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
         };
     }, [portfolio?.username]);
 
-    const savePortfolio = async (customData = null) => {
+    const savePortfolio = async (customData = null, customPasskey = null) => {
         let dataToSave = customData ? { ...customData } : { ...portfolio };
         
         const currentName = (dataToSave.display_name || dataToSave.full_name || '').trim();
@@ -685,12 +678,20 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
         await saveDraftToStorage(activeUsername, dataToSave);
 
         // Always save to Supabase online database when configured (enables multi-device / live remote access)
+        let sbRes = null;
         if (isSupabaseConfigured()) {
-            savePortfolioToSupabase(activeUsername, dataToSave).catch((err) => {
+            try {
+                sbRes = await savePortfolioToSupabase(activeUsername, dataToSave, customPasskey);
+                if (sbRes && !sbRes.success && sbRes.needsPasskey) {
+                    setError(sbRes.error);
+                    setSaving(false);
+                    return { success: false, error: sbRes.error, needsPasskey: true };
+                }
+            } catch (err) {
                 console.warn('Supabase save error:', err);
-            });
+            }
             if (dataToSave.published_slug && dataToSave.published_slug !== activeUsername) {
-                savePortfolioToSupabase(dataToSave.published_slug, dataToSave).catch(() => {});
+                savePortfolioToSupabase(dataToSave.published_slug, dataToSave, customPasskey).catch(() => {});
             }
         }
 
@@ -852,7 +853,7 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
         }
     };
 
-    const publishPortfolio = useCallback(async (customPortfolio = null) => {
+    const publishPortfolio = useCallback(async (customPortfolio = null, customPasskey = null) => {
         const current = customPortfolio || portfolio;
         const slug = current.published_slug || publishedSlug || generatePortfolioSlug(current.full_name || current.username);
 
@@ -885,16 +886,23 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
 
         // Save to Supabase for global persistence across any visitor / device
         let supabaseSync = { configured: isSupabaseConfigured(), success: false, error: null };
+        let publishPasskey = null;
+        let needsPasskey = false;
         if (isSupabaseConfigured()) {
             try {
-                const sbRes = await savePortfolioToSupabase(encodeResult.slug, currentWithSlug);
+                const sbRes = await savePortfolioToSupabase(encodeResult.slug, currentWithSlug, customPasskey);
+                publishPasskey = sbRes?.passkey || null;
+                needsPasskey = Boolean(sbRes?.needsPasskey);
                 supabaseSync = {
                     configured: true,
                     success: Boolean(sbRes && sbRes.success),
-                    error: sbRes && sbRes.error ? sbRes.error : null
+                    error: sbRes && sbRes.error ? sbRes.error : null,
+                    passkey: publishPasskey,
+                    isNewPasskey: Boolean(sbRes?.isNewPasskey),
+                    needsPasskey,
                 };
-                if (currentWithSlug.username && currentWithSlug.username !== encodeResult.slug) {
-                    savePortfolioToSupabase(currentWithSlug.username, currentWithSlug).catch(() => {});
+                if (currentWithSlug.username && currentWithSlug.username !== encodeResult.slug && sbRes && sbRes.success) {
+                    savePortfolioToSupabase(currentWithSlug.username, currentWithSlug, customPasskey).catch(() => {});
                 }
             } catch (err) {
                 console.warn('Supabase publish background sync notice:', err);
@@ -910,6 +918,10 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
             ...encodeResult,
             portfolioData: currentWithSlug,
             supabaseSync,
+            passkey: publishPasskey,
+            needsPasskey,
+            success: !needsPasskey,
+            error: supabaseSync?.error,
         };
     }, [portfolio, publishedSlug]);
 
@@ -1100,6 +1112,8 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
                 clearSessionHistory,
                 recoveredSessionNotice,
                 setRecoveredSessionNotice,
+                getStoredPasskey,
+                setStoredPasskey,
             }}
         >
             {children}

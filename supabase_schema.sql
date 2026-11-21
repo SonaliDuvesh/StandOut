@@ -7,9 +7,23 @@ CREATE TABLE IF NOT EXISTS public.published_portfolios (
     slug TEXT UNIQUE NOT NULL,
     username TEXT,
     portfolio_data JSONB NOT NULL,
+    passkey_hash TEXT,
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Ensure passkey_hash column exists if table was already created
+DO $$ 
+BEGIN 
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'published_portfolios' 
+          AND column_name = 'passkey_hash'
+    ) THEN 
+        ALTER TABLE public.published_portfolios ADD COLUMN passkey_hash TEXT;
+    END IF;
+END $$;
 
 -- 2. Create indexes for fast lookup by slug and username
 CREATE INDEX IF NOT EXISTS idx_published_portfolios_slug ON public.published_portfolios(slug);
@@ -39,6 +53,53 @@ CREATE POLICY "Allow public update to published portfolios"
     USING (true)
     WITH CHECK (true);
 
--- 6. Grant table permissions to anon and authenticated roles (fixes code 42501 permission denied)
+-- 6. Secure function to save or update portfolio with passkey verification
+-- Prevents unauthorized overwriting of existing portfolios without the correct passkey
+CREATE OR REPLACE FUNCTION public.save_portfolio_with_passkey(
+    p_slug TEXT,
+    p_username TEXT,
+    p_data JSONB,
+    p_passkey_hash TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_existing_hash TEXT;
+BEGIN
+    -- Check if record already exists with this slug
+    SELECT passkey_hash INTO v_existing_hash
+    FROM public.published_portfolios
+    WHERE slug = p_slug;
+
+    -- If record exists and has a passkey_hash, verify incoming passkey
+    IF FOUND AND v_existing_hash IS NOT NULL AND v_existing_hash <> '' THEN
+        IF p_passkey_hash IS NULL OR p_passkey_hash = '' OR p_passkey_hash <> v_existing_hash THEN
+            RAISE EXCEPTION 'PASSKEY_MISMATCH: Unauthorized. You must provide the correct Edit Passkey to update this portfolio.';
+        END IF;
+    END IF;
+
+    -- Insert or update
+    INSERT INTO public.published_portfolios (slug, username, portfolio_data, passkey_hash, updated_at)
+    VALUES (
+        p_slug,
+        p_username,
+        p_data,
+        COALESCE(p_passkey_hash, v_existing_hash),
+        timezone('utc'::text, now())
+    )
+    ON CONFLICT (slug) DO UPDATE SET
+        username = EXCLUDED.username,
+        portfolio_data = EXCLUDED.portfolio_data,
+        passkey_hash = COALESCE(EXCLUDED.passkey_hash, public.published_portfolios.passkey_hash),
+        updated_at = EXCLUDED.updated_at;
+
+    RETURN jsonb_build_object('success', true, 'slug', p_slug);
+END;
+$$;
+
+-- 7. Grant table & function permissions to anon, authenticated, and service_role
 GRANT ALL ON TABLE public.published_portfolios TO anon, authenticated, service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.save_portfolio_with_passkey(TEXT, TEXT, JSONB, TEXT) TO anon, authenticated, service_role;

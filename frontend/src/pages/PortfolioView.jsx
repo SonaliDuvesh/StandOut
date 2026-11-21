@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { usePortfolio } from '../contexts/PortfolioContext';
+import { DEFAULT_PORTFOLIO } from '../contexts/defaultPortfolio';
 import Navbar from '../components/Navbar';
 import Hero from '../components/Hero';
 import Projects from '../components/Projects';
@@ -19,6 +20,7 @@ const PortfolioView = ({ isPreview = false, isPublishedView = false }) => {
     const { username, slug } = useParams();
     const {
         portfolio,
+        setPortfolio,
         loadPortfolio,
         loadPublishedPortfolio,
         loading,
@@ -47,8 +49,9 @@ const PortfolioView = ({ isPreview = false, isPublishedView = false }) => {
             } else if (username) {
                 loadPortfolio(username);
             } else if (!isPreview) {
-                // When visitors open the root URL '/' on deployed site, load the latest saved portfolio from Supabase
-                loadPortfolio();
+                // Root URL '/' without any username or slug:
+                // ALWAYS display clean default showcase template (no user data)
+                setPortfolio(DEFAULT_PORTFOLIO);
             }
         };
 

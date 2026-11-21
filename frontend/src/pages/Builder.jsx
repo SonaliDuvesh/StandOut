@@ -18,7 +18,7 @@ import {
     Home, FolderGit2, User, Cpu, Award, Mail, Palette,
     Save, Eye, ExternalLink, Check, Sun, Moon,
     AlertCircle, CheckCircle2, Globe, Sparkles, X, Rocket, Share2, RefreshCw, RotateCcw,
-    Undo, Redo, History
+    Undo, Redo, History, Key, ShieldCheck
 } from 'lucide-react';
 
 const TABS = [
@@ -62,6 +62,8 @@ const Builder = () => {
         clearSessionHistory,
         recoveredSessionNotice,
         setRecoveredSessionNotice,
+        getStoredPasskey,
+        setStoredPasskey,
     } = usePortfolio();
 
     const { theme, toggleTheme } = useTheme();
@@ -74,6 +76,13 @@ const Builder = () => {
     const [showUserModal, setShowUserModal] = useState(false);
     const [showPublishModal, setShowPublishModal] = useState(false);
     const [showHistoryModal, setShowHistoryModal] = useState(false);
+    const [showPasskeyModal, setShowPasskeyModal] = useState(false);
+    const [passkeyInput, setPasskeyInput] = useState(() => {
+        return (typeof getStoredPasskey === 'function')
+            ? (getStoredPasskey(portfolio.username) || getStoredPasskey(publishedSlug) || '')
+            : '';
+    });
+    const [passkeyError, setPasskeyError] = useState('');
     const [publishResult, setPublishResult] = useState(null);
 
     // Global keyboard shortcuts for undo / redo
@@ -133,10 +142,29 @@ const Builder = () => {
         await savePortfolio();
     };
 
-    const handlePublish = async () => {
-        const res = await publishPortfolio();
+    const handlePublish = async (overridePasskey = null) => {
+        const keyToUse = overridePasskey || passkeyInput || (typeof getStoredPasskey === 'function' ? (getStoredPasskey(portfolio.username) || getStoredPasskey(publishedSlug)) : '');
+        const res = await publishPortfolio(null, keyToUse || undefined);
         setPublishResult(res);
-        setShowPublishModal(true);
+        if (res.needsPasskey) {
+            setPasskeyError(res.error || 'Edit Passkey required to update this portfolio.');
+            setShowPasskeyModal(true);
+        } else {
+            setPasskeyError('');
+            setShowPublishModal(true);
+        }
+    };
+
+    const handlePasskeySubmit = async (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+        const clean = passkeyInput.trim().toUpperCase();
+        if (!clean) return;
+        if (typeof setStoredPasskey === 'function') {
+            setStoredPasskey(portfolio.username, clean);
+            if (publishedSlug) setStoredPasskey(publishedSlug, clean);
+        }
+        setShowPasskeyModal(false);
+        await handlePublish(clean);
     };
 
     const handleUsernameSubmit = (e) => {
@@ -172,6 +200,22 @@ const Builder = () => {
                                 <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
                                     {portfolio.is_published ? 'Published' : 'Draft'}
                                 </span>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const stored = (typeof getStoredPasskey === 'function')
+                                            ? (getStoredPasskey(portfolio.username) || getStoredPasskey(publishedSlug) || '')
+                                            : '';
+                                        setPasskeyInput(stored);
+                                        setPasskeyError('');
+                                        setShowPasskeyModal(true);
+                                    }}
+                                    className="text-[10px] text-amber-700 dark:text-amber-400 hover:text-amber-800 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-800/60 font-mono font-medium flex items-center gap-1 cursor-pointer"
+                                    title="View / Enter Edit Passkey"
+                                >
+                                    <Key className="w-2.5 h-2.5" />
+                                    <span>Passkey</span>
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -453,6 +497,82 @@ const Builder = () => {
                                     className="btn-primary py-2 px-5 text-xs"
                                 >
                                     Update Handle
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {showPasskeyModal && typeof document !== 'undefined' && createPortal(
+                <div className="fixed inset-0 z-[99999] bg-navy-950/70 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowPasskeyModal(false)}>
+                    <div className="bg-white dark:bg-navy-900 w-full max-w-md rounded-3xl p-6 shadow-2xl border border-amber-300 dark:border-amber-800 space-y-4 animate-scale-up text-navy-900 dark:text-soft-cream-50" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-start justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
+                                    <Key className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-bold text-navy-900 dark:text-soft-cream-50">
+                                        Owner Edit Passkey
+                                    </h3>
+                                    <p className="text-xs text-navy-500 dark:text-soft-cream-400">
+                                        Proof of ownership for @{portfolio.username || 'username'}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowPasskeyModal(false)}
+                                className="p-1.5 text-navy-400 hover:text-navy-700 dark:hover:text-soft-cream-200 cursor-pointer"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <p className="text-xs text-navy-600 dark:text-soft-cream-300 leading-relaxed">
+                            Portfolios in StandOut are protected with an Edit Passkey (e.g. <span className="font-mono font-bold text-amber-600 dark:text-amber-400">STAND-XXXXXX</span>). Enter your secret passkey below to verify ownership and push updates.
+                        </p>
+
+                        <form onSubmit={handlePasskeySubmit} className="space-y-3">
+                            <div>
+                                <label className="block text-xs font-semibold text-navy-700 dark:text-soft-cream-300 mb-1">
+                                    Your Secret Passkey
+                                </label>
+                                <input
+                                    type="text"
+                                    value={passkeyInput}
+                                    onChange={(e) => {
+                                        setPasskeyInput(e.target.value.toUpperCase());
+                                        setPasskeyError('');
+                                    }}
+                                    placeholder="e.g. STAND-7K9W2P"
+                                    required
+                                    className="input font-mono font-bold text-center tracking-widest text-sm uppercase py-2.5"
+                                    autoFocus
+                                />
+                            </div>
+
+                            {passkeyError && (
+                                <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-300/80 dark:border-rose-800/80 text-[11px] text-rose-800 dark:text-rose-300 font-medium">
+                                    {passkeyError}
+                                </div>
+                            )}
+
+                            <div className="flex gap-2 pt-2">
+                                <button
+                                    type="submit"
+                                    className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-golden-600 hover:from-amber-600 hover:to-golden-700 text-white font-bold text-xs shadow-md cursor-pointer"
+                                >
+                                    Verify & Unlock
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPasskeyModal(false)}
+                                    className="py-2.5 px-4 rounded-xl btn-secondary text-xs cursor-pointer"
+                                >
+                                    Cancel
                                 </button>
                             </div>
                         </form>

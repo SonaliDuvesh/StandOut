@@ -81,9 +81,65 @@ export const testSupabaseConnection = async () => {
 };
 
 /**
- * Save / upsert a portfolio snapshot into Supabase online database
+ * Generate a clean, secure 6-character user passkey (e.g. STAND-7K9W2P)
  */
-export const savePortfolioToSupabase = async (identifier, portfolioData) => {
+export const generatePasskey = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    const array = new Uint8Array(6);
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+        crypto.getRandomValues(array);
+        for (let i = 0; i < 6; i++) {
+            code += chars[array[i] % chars.length];
+        }
+    } else {
+        for (let i = 0; i < 6; i++) {
+            code += chars[Math.floor(Math.random() * chars.length)];
+        }
+    }
+    return `STAND-${code}`;
+};
+
+/**
+ * Hash passkey using SHA-256 for secure online database verification
+ */
+export const hashPasskey = async (passkey) => {
+    if (!passkey) return '';
+    const clean = String(passkey).trim().toUpperCase();
+    if (!clean) return '';
+    try {
+        if (typeof crypto !== 'undefined' && crypto.subtle) {
+            const msgUint8 = new TextEncoder().encode(clean);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+    } catch (e) {}
+    // Fallback deterministic hash
+    let hash = 0;
+    for (let i = 0; i < clean.length; i++) {
+        hash = ((hash << 5) - hash) + clean.charCodeAt(i);
+        hash |= 0;
+    }
+    return 'fb_' + Math.abs(hash).toString(16);
+};
+
+export const getStoredPasskey = (identifier) => {
+    if (typeof localStorage === 'undefined' || !identifier) return '';
+    const clean = String(identifier).trim().toLowerCase();
+    return localStorage.getItem(`standout_passkey_${clean}`) || '';
+};
+
+export const setStoredPasskey = (identifier, passkey) => {
+    if (typeof localStorage === 'undefined' || !identifier || !passkey) return;
+    const clean = String(identifier).trim().toLowerCase();
+    localStorage.setItem(`standout_passkey_${clean}`, String(passkey).trim().toUpperCase());
+};
+
+/**
+ * Save / upsert a portfolio snapshot into Supabase online database with passkey protection
+ */
+export const savePortfolioToSupabase = async (identifier, portfolioData, customPasskey = null) => {
     const client = getSupabaseClient();
     if (!client) {
         console.warn('[StandOut Supabase] Supabase is not connected. (URL or key is missing in environment)');
@@ -105,6 +161,28 @@ export const savePortfolioToSupabase = async (identifier, portfolioData) => {
         assignedUsername
     ).trim().toLowerCase();
 
+    // Determine passkey: user provided > localStorage > generate new passkey
+    let activePasskey = (
+        customPasskey ||
+        getStoredPasskey(primarySlug) ||
+        getStoredPasskey(assignedUsername) ||
+        ''
+    ).trim().toUpperCase();
+
+    let isNewPasskey = false;
+    if (!activePasskey) {
+        activePasskey = generatePasskey();
+        isNewPasskey = true;
+    }
+
+    // Save active passkey locally so owner stays unlocked on this device
+    setStoredPasskey(primarySlug, activePasskey);
+    if (assignedUsername && assignedUsername !== 'default') {
+        setStoredPasskey(assignedUsername, activePasskey);
+    }
+
+    const passkeyHash = await hashPasskey(activePasskey);
+
     // Ensure portfolioData has the latest username assigned
     const finalData = {
         ...portfolioData,
@@ -112,51 +190,91 @@ export const savePortfolioToSupabase = async (identifier, portfolioData) => {
         published_slug: portfolioData.published_slug || primarySlug,
     };
 
-    console.log('[StandOut Supabase] Saving portfolio to Supabase table "published_portfolios"...', {
+    console.log('[StandOut Supabase] Saving portfolio with passkey verification...', {
         slug: primarySlug,
         username: assignedUsername,
-        name: finalData.full_name || finalData.display_name
+        hasPasskey: Boolean(activePasskey),
     });
 
     try {
-        const rowsToUpsert = [
+        const rowsToSave = [
             {
                 slug: primarySlug,
                 username: assignedUsername,
                 portfolio_data: finalData,
-                updated_at: new Date().toISOString(),
             }
         ];
 
-        // Also upsert under the direct username slug if different from primarySlug
         if (assignedUsername && assignedUsername !== primarySlug && assignedUsername !== 'default') {
-            rowsToUpsert.push({
+            rowsToSave.push({
                 slug: assignedUsername,
                 username: assignedUsername,
                 portfolio_data: finalData,
-                updated_at: new Date().toISOString(),
             });
         }
 
-        // Also upsert normalized slug without hyphens/underscores (e.g. "sonali-duvesh" -> "sonaliduvesh")
         const normalized = assignedUsername.replace(/[-_]/g, '');
         if (normalized && normalized !== assignedUsername && normalized !== primarySlug) {
-            rowsToUpsert.push({
+            rowsToSave.push({
                 slug: normalized,
                 username: assignedUsername,
                 portfolio_data: finalData,
-                updated_at: new Date().toISOString(),
             });
         }
 
         let lastError = null;
-        for (const row of rowsToUpsert) {
-            const { error } = await client
+        for (const row of rowsToSave) {
+            // First try secure PostgreSQL RPC function if installed
+            const { data: rpcData, error: rpcError } = await client.rpc('save_portfolio_with_passkey', {
+                p_slug: row.slug,
+                p_username: row.username,
+                p_data: row.portfolio_data,
+                p_passkey_hash: passkeyHash,
+            });
+
+            if (!rpcError) {
+                continue;
+            }
+
+            // If RPC reported a passkey mismatch, halt and return unauthorized
+            if (rpcError.message && rpcError.message.includes('PASSKEY_MISMATCH')) {
+                return {
+                    success: false,
+                    error: 'Unauthorized: Incorrect Edit Passkey. You cannot overwrite this portfolio without the owner passkey.',
+                    needsPasskey: true,
+                    slug: primarySlug,
+                };
+            }
+
+            // Fallback for direct table upsert if RPC function is not yet created in SQL
+            const { data: existingRecord } = await client
                 .from('published_portfolios')
-                .upsert(row, { onConflict: 'slug' });
-            if (error) {
-                lastError = error;
-                console.error(`[StandOut Supabase] Error saving row slug="${row.slug}":`, error.message);
+                .select('passkey_hash')
+                .eq('slug', row.slug)
+                .maybeSingle();
+
+            if (existingRecord && existingRecord.passkey_hash && existingRecord.passkey_hash !== passkeyHash) {
+                return {
+                    success: false,
+                    error: 'Unauthorized: Incorrect Edit Passkey. Enter your secret passkey to update this portfolio.',
+                    needsPasskey: true,
+                    slug: primarySlug,
+                };
+            }
+
+            const { error: upsertError } = await client
+                .from('published_portfolios')
+                .upsert({
+                    slug: row.slug,
+                    username: row.username,
+                    portfolio_data: row.portfolio_data,
+                    passkey_hash: existingRecord?.passkey_hash || passkeyHash,
+                    updated_at: new Date().toISOString(),
+                }, { onConflict: 'slug' });
+
+            if (upsertError) {
+                lastError = upsertError;
+                console.error(`[StandOut Supabase] Save error for slug="${row.slug}":`, upsertError.message);
             }
         }
 
@@ -164,8 +282,14 @@ export const savePortfolioToSupabase = async (identifier, portfolioData) => {
             return { success: false, error: lastError.message };
         }
 
-        console.log('[StandOut Supabase] ✅ Successfully saved to Supabase! Rows:', rowsToUpsert.map(r => r.slug));
-        return { success: true, slug: primarySlug, username: assignedUsername };
+        console.log('[StandOut Supabase] ✅ Successfully saved to Supabase with passkey protection! Passkey:', activePasskey);
+        return {
+            success: true,
+            slug: primarySlug,
+            username: assignedUsername,
+            passkey: activePasskey,
+            isNewPasskey,
+        };
     } catch (err) {
         console.error('[StandOut Supabase] Save exception:', err.message || err);
         return { success: false, error: err.message || 'Network or database error' };
@@ -173,7 +297,8 @@ export const savePortfolioToSupabase = async (identifier, portfolioData) => {
 };
 
 /**
- * Retrieve a portfolio snapshot from Supabase by slug, username, or latest record
+ * Retrieve a portfolio snapshot from Supabase by slug, username
+ * NOTE: When identifier is null, empty, or 'username', returns null so the root page ALWAYS shows default showcase template.
  */
 export const getPortfolioFromSupabase = async (identifier) => {
     const client = getSupabaseClient();
@@ -181,77 +306,66 @@ export const getPortfolioFromSupabase = async (identifier) => {
 
     const clean = (identifier || '').trim().toLowerCase();
 
+    // If no specific username/slug was requested, return null so clean default template is used
+    if (!clean || clean === 'username' || clean === 'default') {
+        return null;
+    }
+
     try {
-        // 1. If a specific identifier is provided (not 'username' / 'default')
-        if (clean && clean !== 'username' && clean !== 'default') {
-            // Check exact slug
-            let { data, error } = await client
-                .from('published_portfolios')
-                .select('portfolio_data')
-                .eq('slug', clean)
-                .maybeSingle();
-
-            if (data && data.portfolio_data) {
-                return data.portfolio_data;
-            }
-
-            // Check exact username
-            const userRes = await client
-                .from('published_portfolios')
-                .select('portfolio_data')
-                .eq('username', clean)
-                .order('updated_at', { ascending: false })
-                .limit(1)
-                .maybeSingle();
-
-            if (userRes.data && userRes.data.portfolio_data) {
-                return userRes.data.portfolio_data;
-            }
-
-            // Check normalized without hyphens / underscores
-            const normalized = clean.replace(/[-_]/g, '');
-            if (normalized && normalized !== clean) {
-                const normRes = await client
-                    .from('published_portfolios')
-                    .select('portfolio_data')
-                    .or(`slug.eq.${normalized},username.eq.${normalized}`)
-                    .order('updated_at', { ascending: false })
-                    .limit(1)
-                    .maybeSingle();
-
-                if (normRes.data && normRes.data.portfolio_data) {
-                    return normRes.data.portfolio_data;
-                }
-            }
-
-            // Check without randomized suffix (e.g. "sonali-a1b2" -> "sonali")
-            const base = clean.replace(/-[a-z0-9]{3,5}$/, '');
-            if (base && base !== clean) {
-                const baseRes = await client
-                    .from('published_portfolios')
-                    .select('portfolio_data')
-                    .or(`slug.eq.${base},username.eq.${base}`)
-                    .order('updated_at', { ascending: false })
-                    .limit(1)
-                    .maybeSingle();
-
-                if (baseRes.data && baseRes.data.portfolio_data) {
-                    return baseRes.data.portfolio_data;
-                }
-            }
-        }
-
-        // 2. Fallback: retrieve the most recently updated portfolio in the database
-        // (Enables visitors to see the published portfolio when opening root URL '/' or clean site)
-        const latestRes = await client
+        // 1. Check exact slug
+        let { data, error } = await client
             .from('published_portfolios')
             .select('portfolio_data')
+            .eq('slug', clean)
+            .maybeSingle();
+
+        if (data && data.portfolio_data) {
+            return data.portfolio_data;
+        }
+
+        // 2. Check exact username
+        const userRes = await client
+            .from('published_portfolios')
+            .select('portfolio_data')
+            .eq('username', clean)
             .order('updated_at', { ascending: false })
             .limit(1)
             .maybeSingle();
 
-        if (latestRes.data && latestRes.data.portfolio_data) {
-            return latestRes.data.portfolio_data;
+        if (userRes.data && userRes.data.portfolio_data) {
+            return userRes.data.portfolio_data;
+        }
+
+        // 3. Check normalized without hyphens / underscores
+        const normalized = clean.replace(/[-_]/g, '');
+        if (normalized && normalized !== clean) {
+            const normRes = await client
+                .from('published_portfolios')
+                .select('portfolio_data')
+                .or(`slug.eq.${normalized},username.eq.${normalized}`)
+                .order('updated_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (normRes.data && normRes.data.portfolio_data) {
+                return normRes.data.portfolio_data;
+            }
+        }
+
+        // 4. Check without randomized suffix (e.g. "sonali-a1b2" -> "sonali")
+        const base = clean.replace(/-[a-z0-9]{3,5}$/, '');
+        if (base && base !== clean) {
+            const baseRes = await client
+                .from('published_portfolios')
+                .select('portfolio_data')
+                .or(`slug.eq.${base},username.eq.${base}`)
+                .order('updated_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (baseRes.data && baseRes.data.portfolio_data) {
+                return baseRes.data.portfolio_data;
+            }
         }
     } catch (err) {
         console.warn('Supabase fetch exception:', err.message);

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-    Check, Copy, ExternalLink, Globe, Sparkles, X, RefreshCw
+    Check, Copy, ExternalLink, Globe, Sparkles, X, RefreshCw, Key
 } from 'lucide-react';
 
 const PublishModal = ({
@@ -11,6 +11,7 @@ const PublishModal = ({
     isUpdate = false,
 }) => {
     const [copied, setCopied] = useState(false);
+    const [copiedPasskey, setCopiedPasskey] = useState(false);
 
     if (!isOpen || !publishResult) return null;
 
@@ -18,6 +19,7 @@ const PublishModal = ({
         slug,
         shortUrl,
         fullUrl,
+        passkey,
     } = publishResult;
 
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -30,6 +32,17 @@ const PublishModal = ({
             setTimeout(() => setCopied(false), 2500);
         } catch (err) {
             console.error('Failed to copy to clipboard', err);
+        }
+    };
+
+    const handleCopyPasskey = async () => {
+        if (!passkey) return;
+        try {
+            await navigator.clipboard.writeText(passkey);
+            setCopiedPasskey(true);
+            setTimeout(() => setCopiedPasskey(false), 2500);
+        } catch (err) {
+            console.error('Failed to copy passkey', err);
         }
     };
 
@@ -104,6 +117,33 @@ const PublishModal = ({
                             )}
                         </button>
                     </div>
+
+                    {passkey && (
+                        <div className="p-3.5 rounded-2xl bg-amber-500/10 dark:bg-amber-950/40 border border-amber-500/30 space-y-2 text-left animate-fade-in">
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                                    <Key className="w-3.5 h-3.5" />
+                                    <span>Secret Edit Passkey</span>
+                                </span>
+                                <span className="text-[10px] text-navy-500 dark:text-soft-cream-400 font-medium">Keep this private</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="flex-1 font-mono font-bold text-sm tracking-wider text-navy-900 dark:text-soft-cream-100 bg-white/90 dark:bg-navy-950/90 px-3 py-1.5 rounded-xl border border-amber-500/20 select-all">
+                                    {passkey}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleCopyPasskey}
+                                    className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white transition-all cursor-pointer shadow-xs shrink-0"
+                                >
+                                    {copiedPasskey ? 'Copied!' : 'Copy Key'}
+                                </button>
+                            </div>
+                            <p className="text-[11px] text-navy-600 dark:text-soft-cream-400 leading-snug">
+                                🔒 <strong>Proof of ownership:</strong> Save this passkey! You will need it to update your portfolio from another device or browser.
+                            </p>
+                        </div>
+                    )}
 
                     {publishResult.supabaseSync && (
                         <div className="pt-1">
