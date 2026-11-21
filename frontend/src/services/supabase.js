@@ -1,7 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 
-const envUrl = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_SUPABASE_URL : '';
-const envKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_SUPABASE_ANON_KEY : '';
+// Vite replaces `import.meta.env.VITE_*` statically at build time.
+// Note: Optional chaining (?.) must NOT be used on import.meta.env for static replacement to work.
+const envUrl = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_URL) || '';
+const envKey = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) || '';
 
 // Allow runtime configuration from localStorage if user enters it in settings or modal
 export const getStoredConfig = () => {
@@ -63,7 +65,11 @@ export const testSupabaseConnection = async () => {
  */
 export const savePortfolioToSupabase = async (identifier, portfolioData) => {
     const client = getSupabaseClient();
-    if (!client || !portfolioData) return false;
+    if (!client) {
+        console.warn('[StandOut Supabase] Supabase is not connected. (VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is missing)');
+        return false;
+    }
+    if (!portfolioData) return false;
 
     const primarySlug = (
         portfolioData.published_slug ||
@@ -78,9 +84,15 @@ export const savePortfolioToSupabase = async (identifier, portfolioData) => {
         'default'
     ).trim().toLowerCase();
 
+    console.log('[StandOut Supabase] Saving portfolio to Supabase table "published_portfolios"...', {
+        slug: primarySlug,
+        username,
+        name: portfolioData.full_name || portfolioData.display_name
+    });
+
     try {
         // Upsert by primary slug
-        const { error } = await client
+        const { data, error } = await client
             .from('published_portfolios')
             .upsert(
                 {
@@ -93,9 +105,11 @@ export const savePortfolioToSupabase = async (identifier, portfolioData) => {
             );
 
         if (error) {
-            console.warn('Supabase save note:', error.message);
+            console.error('[StandOut Supabase] Save failed with error:', error.message, error);
             return false;
         }
+
+        console.log('[StandOut Supabase] ✅ Successfully saved to Supabase! Row slug:', primarySlug);
 
         // If username is distinct from slug and not 'username' / 'default', also upsert username key
         // so both /p/:slug and /:username can resolve immediately
@@ -115,7 +129,7 @@ export const savePortfolioToSupabase = async (identifier, portfolioData) => {
 
         return true;
     } catch (err) {
-        console.warn('Supabase save exception:', err.message);
+        console.error('[StandOut Supabase] Save exception:', err.message || err);
         return false;
     }
 };
