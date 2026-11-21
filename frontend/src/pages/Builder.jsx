@@ -13,10 +13,12 @@ import AppearanceTab from '../components/builder/AppearanceTab';
 import CustomPageTab from '../components/builder/CustomPageTab';
 import FloatingToast from '../components/FloatingToast';
 import PublishModal from '../components/builder/PublishModal';
+import SessionHistoryModal from '../components/builder/SessionHistoryModal';
 import {
     Home, FolderGit2, User, Cpu, Award, Mail, Palette,
     Save, Eye, ExternalLink, Check, Sun, Moon,
-    AlertCircle, CheckCircle2, Globe, Sparkles, X, Rocket, Share2, RefreshCw, RotateCcw
+    AlertCircle, CheckCircle2, Globe, Sparkles, X, Rocket, Share2, RefreshCw, RotateCcw,
+    Undo, Redo, History
 } from 'lucide-react';
 
 const TABS = [
@@ -48,6 +50,18 @@ const Builder = () => {
         setError,
         activeSection,
         setActiveSection,
+        // Session history & undo/redo
+        undo,
+        redo,
+        canUndo,
+        canRedo,
+        sessionSnapshots,
+        restoreSessionSnapshot,
+        saveManualCheckpoint,
+        restoreLastSession,
+        clearSessionHistory,
+        recoveredSessionNotice,
+        setRecoveredSessionNotice,
     } = usePortfolio();
 
     const { theme, toggleTheme } = useTheme();
@@ -59,7 +73,36 @@ const Builder = () => {
     const [usernameInput, setUsernameInput] = useState(portfolio.username || 'username');
     const [showUserModal, setShowUserModal] = useState(false);
     const [showPublishModal, setShowPublishModal] = useState(false);
+    const [showHistoryModal, setShowHistoryModal] = useState(false);
     const [publishResult, setPublishResult] = useState(null);
+
+    // Global keyboard shortcuts for undo / redo
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            const isInputField = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable;
+            const isMac = typeof navigator !== 'undefined' && navigator.platform?.toUpperCase().indexOf('MAC') >= 0;
+            const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+
+            if (cmdOrCtrl && !e.altKey) {
+                // Redo: Ctrl+Y or Ctrl+Shift+Z / Cmd+Shift+Z
+                if ((e.key === 'y' || e.key === 'Y') || (e.shiftKey && (e.key === 'z' || e.key === 'Z'))) {
+                    if (!isInputField && canRedo) {
+                        e.preventDefault();
+                        redo();
+                    }
+                } else if (e.key === 'z' || e.key === 'Z') {
+                    // Undo: Ctrl+Z / Cmd+Z
+                    if (!isInputField && canUndo) {
+                        e.preventDefault();
+                        undo();
+                    }
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [undo, redo, canUndo, canRedo]);
 
     useEffect(() => {
         if (portfolio.username) {
@@ -200,6 +243,54 @@ const Builder = () => {
                             )}
                         </button>
 
+                        {/* Undo Button */}
+                        <button
+                            type="button"
+                            onClick={undo}
+                            disabled={!canUndo}
+                            className={`btn-secondary py-2 px-2.5 text-xs font-semibold inline-flex items-center gap-1 shadow-xs transition-all ${
+                                !canUndo
+                                    ? 'opacity-35 cursor-not-allowed text-navy-400 dark:text-soft-cream-600'
+                                    : 'text-navy-700 dark:text-soft-cream-200 hover:text-navy-900 dark:hover:text-white cursor-pointer hover:bg-soft-cream-200 dark:hover:bg-navy-800'
+                            }`}
+                            title={canUndo ? "Undo last change (Ctrl+Z)" : "Nothing to undo"}
+                        >
+                            <Undo className="w-3.5 h-3.5" />
+                            <span className="hidden xl:inline">Undo</span>
+                        </button>
+
+                        {/* Redo Button */}
+                        <button
+                            type="button"
+                            onClick={redo}
+                            disabled={!canRedo}
+                            className={`btn-secondary py-2 px-2.5 text-xs font-semibold inline-flex items-center gap-1 shadow-xs transition-all ${
+                                !canRedo
+                                    ? 'opacity-35 cursor-not-allowed text-navy-400 dark:text-soft-cream-600'
+                                    : 'text-navy-700 dark:text-soft-cream-200 hover:text-navy-900 dark:hover:text-white cursor-pointer hover:bg-soft-cream-200 dark:hover:bg-navy-800'
+                            }`}
+                            title={canRedo ? "Redo (Ctrl+Y / Ctrl+Shift+Z)" : "Nothing to redo"}
+                        >
+                            <Redo className="w-3.5 h-3.5" />
+                            <span className="hidden xl:inline">Redo</span>
+                        </button>
+
+                        {/* Session History & Restore Points */}
+                        <button
+                            type="button"
+                            onClick={() => setShowHistoryModal(true)}
+                            className="btn-secondary py-2 px-2.5 text-xs font-semibold inline-flex items-center gap-1.5 shadow-xs relative text-navy-700 dark:text-soft-cream-200 hover:border-golden-400/80 cursor-pointer"
+                            title="Session History & Auto-Saved Restore Points"
+                        >
+                            <History className="w-3.5 h-3.5 text-golden-500" />
+                            <span className="hidden sm:inline">History</span>
+                            {sessionSnapshots && sessionSnapshots.length > 0 && (
+                                <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-bold rounded-full bg-golden-500 text-white leading-none">
+                                    {sessionSnapshots.length}
+                                </span>
+                            )}
+                        </button>
+
                         <button
                             type="button"
                             onClick={() => {
@@ -238,6 +329,37 @@ const Builder = () => {
                 onClearSuccess={() => setSuccess?.(null)}
                 onClearError={() => setError?.(null)}
             />
+
+            {recoveredSessionNotice && (
+                <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 pt-4 -mb-2 animate-fade-in">
+                    <div className="p-3 sm:px-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-golden-500/10 to-emerald-500/10 border border-amber-300/60 dark:border-amber-700/60 flex items-center justify-between gap-3 text-xs shadow-xs">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                            <span className="text-navy-800 dark:text-soft-cream-200 truncate">
+                                <strong>Auto-saved session active:</strong> Ongoing progress saved in browser storage (checkpoint at {recoveredSessionNotice.timeStr}).
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => setShowHistoryModal(true)}
+                                className="text-xs font-bold text-golden-600 dark:text-golden-400 hover:underline flex items-center gap-1 cursor-pointer"
+                            >
+                                <History className="w-3 h-3" />
+                                <span>Restore Points</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setRecoveredSessionNotice(null)}
+                                className="p-1 rounded-md text-navy-400 hover:text-navy-700 dark:hover:text-soft-cream-200 transition-colors cursor-pointer"
+                                aria-label="Dismiss banner"
+                            >
+                                <X className="w-3.5 h-3.5" />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 flex flex-col md:flex-row gap-6">
                 <aside className="w-full md:w-64 shrink-0">
@@ -343,6 +465,15 @@ const Builder = () => {
                 onClose={() => setShowPublishModal(false)}
                 publishResult={publishResult}
                 isUpdate={Boolean(publishedSlug)}
+            />
+            <SessionHistoryModal
+                isOpen={showHistoryModal}
+                onClose={() => setShowHistoryModal(false)}
+                snapshots={sessionSnapshots}
+                onRestoreSnapshot={restoreSessionSnapshot}
+                onRestoreLatest={restoreLastSession}
+                onSaveManualCheckpoint={saveManualCheckpoint}
+                onClearHistory={clearSessionHistory}
             />
         </div>
     );

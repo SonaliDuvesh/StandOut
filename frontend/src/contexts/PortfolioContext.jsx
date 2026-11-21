@@ -16,6 +16,12 @@ import {
     sanitizeStorage,
     cleanIndexedDBPersonalData,
     isLegacyOrPersonalIdentifier,
+    saveActiveSession,
+    loadActiveSession,
+    clearActiveSession,
+    saveSessionSnapshot,
+    loadSessionSnapshots,
+    clearSessionSnapshots,
 } from '../utils/portfolioStorage.js';
 
 const PortfolioContext = createContext(null);
@@ -33,6 +39,15 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
     });
     const [portfolio, setPortfolio] = useState(() => {
         if (typeof localStorage !== 'undefined') {
+            // First check if an ongoing active session with user progress exists
+            const activeSession = loadActiveSession();
+            if (activeSession && activeSession.portfolio && !isLegacyOrPersonalIdentifier(activeSession.portfolio)) {
+                return {
+                    ...DEFAULT_PORTFOLIO,
+                    ...activeSession.portfolio,
+                };
+            }
+
             const activeUser = localStorage.getItem('portfolio_last_active_user') || initialUsername;
             const saved = localStorage.getItem(`portfolio_draft_${activeUser}`) ||
                           localStorage.getItem('portfolio_draft_latest') ||
@@ -61,7 +76,212 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
     const [success, setSuccess] = useState(null);
     const [previewMode, setPreviewMode] = useState(false);
     const [deviceMode, setDeviceMode] = useState('desktop');
-    const [activeSection, setActiveSection] = useState('home');
+    const [activeSection, setActiveSection] = useState(() => {
+        if (typeof localStorage !== 'undefined') {
+            const activeSession = loadActiveSession();
+            if (activeSession && activeSession.activeSection) {
+                return activeSession.activeSection;
+            }
+        }
+        return 'home';
+    });
+
+    // Session History & Undo/Redo Engine
+    const [sessionSnapshots, setSessionSnapshots] = useState(() => {
+        return loadSessionSnapshots();
+    });
+    const [canUndo, setCanUndo] = useState(false);
+    const [canRedo, setCanRedo] = useState(false);
+    const [recoveredSessionNotice, setRecoveredSessionNotice] = useState(() => {
+        if (typeof localStorage !== 'undefined') {
+            const active = loadActiveSession();
+            if (active && active.portfolio && active.timestamp) {
+                return {
+                    timestamp: active.timestamp,
+                    timeStr: new Date(active.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    label: active.label || 'Auto-saved session progress',
+                };
+            }
+        }
+        return null;
+    });
+
+    const historyPastRef = useRef([]);
+    const historyFutureRef = useRef([]);
+    const isHistoryNavigatingRef = useRef(false);
+    const lastEditTimeRef = useRef(0);
+    const lastEditPathRef = useRef('');
+    const portfolioRef = useRef(portfolio);
+    const activeSectionRef = useRef(activeSection);
+
+    useEffect(() => {
+        portfolioRef.current = portfolio;
+    }, [portfolio]);
+
+    useEffect(() => {
+        activeSectionRef.current = activeSection;
+    }, [activeSection]);
+
+    const pushHistoryState = useCallback((currentState, path = '', forceImmediate = false) => {
+        if (isHistoryNavigatingRef.current) {
+            isHistoryNavigatingRef.current = false;
+            return;
+        }
+
+        const now = Date.now();
+        const isStructural = forceImmediate || (
+            path.includes('projects') ||
+            path.includes('skills') ||
+            path.includes('certifications') ||
+            path.includes('appearance') ||
+            path.includes('sections_visibility') ||
+            path.includes('titles') ||
+            path.includes('education') ||
+            path.includes('custom_section') ||
+            path.includes('social_links') ||
+            path.startsWith('reset_') ||
+            path === 'restore_checkpoint' ||
+            path === 'import_json'
+        );
+
+        const timeSinceLastEdit = now - lastEditTimeRef.current;
+
+        if (isStructural || timeSinceLastEdit > 800 || lastEditPathRef.current !== path) {
+            historyPastRef.current.push(JSON.parse(JSON.stringify(currentState)));
+            if (historyPastRef.current.length > 50) {
+                historyPastRef.current.shift();
+            }
+            historyFutureRef.current = [];
+            setCanUndo(true);
+            setCanRedo(false);
+        }
+
+        lastEditTimeRef.current = now;
+        lastEditPathRef.current = path;
+    }, []);
+
+    const undo = useCallback(() => {
+        if (historyPastRef.current.length === 0) return false;
+
+        const previousState = historyPastRef.current.pop();
+        historyFutureRef.current.push(JSON.parse(JSON.stringify(portfolioRef.current)));
+        if (historyFutureRef.current.length > 50) {
+            historyFutureRef.current.shift();
+        }
+
+        isHistoryNavigatingRef.current = true;
+        setPortfolio(previousState);
+        setCanUndo(historyPastRef.current.length > 0);
+        setCanRedo(true);
+
+        saveActiveSession({
+            portfolio: previousState,
+            activeSection: activeSectionRef.current,
+            timestamp: Date.now(),
+            label: 'Undo previous change'
+        });
+
+        return true;
+    }, []);
+
+    const redo = useCallback(() => {
+        if (historyFutureRef.current.length === 0) return false;
+
+        const nextState = historyFutureRef.current.pop();
+        historyPastRef.current.push(JSON.parse(JSON.stringify(portfolioRef.current)));
+        if (historyPastRef.current.length > 50) {
+            historyPastRef.current.shift();
+        }
+
+        isHistoryNavigatingRef.current = true;
+        setPortfolio(nextState);
+        setCanUndo(true);
+        setCanRedo(historyFutureRef.current.length > 0);
+
+        saveActiveSession({
+            portfolio: nextState,
+            activeSection: activeSectionRef.current,
+            timestamp: Date.now(),
+            label: 'Redo change'
+        });
+
+        return true;
+    }, []);
+
+    const restoreSessionSnapshot = useCallback((snapshot) => {
+        if (!snapshot || !snapshot.portfolio) return false;
+
+        pushHistoryState(portfolioRef.current, 'restore_checkpoint', true);
+
+        isHistoryNavigatingRef.current = true;
+        const restored = {
+            ...DEFAULT_PORTFOLIO,
+            ...snapshot.portfolio,
+        };
+
+        setPortfolio(restored);
+
+        saveActiveSession({
+            portfolio: restored,
+            activeSection: snapshot.activeSection || activeSectionRef.current,
+            timestamp: Date.now(),
+            label: `Restored: ${snapshot.label || 'Saved Checkpoint'}`
+        });
+
+        if (snapshot.activeSection) {
+            setActiveSection(snapshot.activeSection);
+        }
+
+        setSessionSnapshots(loadSessionSnapshots());
+        setSuccess(`Restored session checkpoint: ${snapshot.label || 'Previous progress'}`);
+        setTimeout(() => setSuccess(null), 3000);
+        return true;
+    }, [pushHistoryState]);
+
+    const saveManualCheckpoint = useCallback((customLabel) => {
+        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const label = customLabel || `Manual Save (${timeStr})`;
+        const snap = saveSessionSnapshot({
+            portfolio: portfolioRef.current,
+            activeSection: activeSectionRef.current,
+            label,
+            type: 'manual',
+        });
+        if (snap) {
+            setSessionSnapshots(loadSessionSnapshots());
+        }
+        setSuccess(`Progress checkpoint saved: "${label}"`);
+        setTimeout(() => setSuccess(null), 2500);
+        return snap;
+    }, []);
+
+    const restoreLastSession = useCallback(() => {
+        const active = loadActiveSession();
+        if (active && active.portfolio) {
+            return restoreSessionSnapshot({
+                portfolio: active.portfolio,
+                activeSection: active.activeSection,
+                label: active.label || 'Active Session Progress',
+                timestamp: active.timestamp
+            });
+        }
+        const snaps = loadSessionSnapshots();
+        if (snaps.length > 0) {
+            return restoreSessionSnapshot(snaps[0]);
+        }
+        return false;
+    }, [restoreSessionSnapshot]);
+
+    const clearSessionHistory = useCallback(() => {
+        clearSessionSnapshots();
+        setSessionSnapshots([]);
+        historyPastRef.current = [];
+        historyFutureRef.current = [];
+        setCanUndo(false);
+        setCanRedo(false);
+        setSuccess('Session history cleared.');
+        setTimeout(() => setSuccess(null), 2000);
+    }, []);
 
     const [publishedSlug, setPublishedSlug] = useState(() => {
         if (typeof localStorage === 'undefined') return null;
@@ -144,39 +364,44 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
                     } catch (e) {}
                 }
 
+                // If active session exists, prioritize it so ongoing session progress is not wiped
+                const activeSession = loadActiveSession();
+                const sessionDraft = (activeSession && activeSession.portfolio && !isLegacyOrPersonalIdentifier(activeSession.portfolio)) ? activeSession.portfolio : null;
+                const effectiveDraft = sessionDraft || localDraft;
+
                 const merged = {
                     ...DEFAULT_PORTFOLIO,
                     ...response.data,
-                    ...(localDraft || {}),
+                    ...(effectiveDraft || {}),
                     appearance: {
                         ...DEFAULT_PORTFOLIO.appearance,
                         ...(response.data.appearance || {}),
-                        ...(localDraft?.appearance || {})
+                        ...(effectiveDraft?.appearance || {})
                     },
                     sections_visibility: {
                         ...DEFAULT_PORTFOLIO.sections_visibility,
                         ...(response.data.sections_visibility || {}),
-                        ...(localDraft?.sections_visibility || {})
+                        ...(effectiveDraft?.sections_visibility || {})
                     },
                     custom_section: {
                         ...DEFAULT_PORTFOLIO.custom_section,
                         ...(response.data.custom_section || {}),
-                        ...(localDraft?.custom_section || {})
+                        ...(effectiveDraft?.custom_section || {})
                     },
                     social_links: {
                         ...DEFAULT_PORTFOLIO.social_links,
                         ...(response.data.social_links || {}),
-                        ...(localDraft?.social_links || {})
+                        ...(effectiveDraft?.social_links || {})
                     },
                     home_typography: {
                         ...DEFAULT_PORTFOLIO.home_typography,
                         ...(response.data.home_typography || {}),
-                        ...(localDraft?.home_typography || {})
+                        ...(effectiveDraft?.home_typography || {})
                     },
                     background_settings: {
                         ...DEFAULT_PORTFOLIO.background_settings,
                         ...(response.data.background_settings || {}),
-                        ...(localDraft?.background_settings || {})
+                        ...(effectiveDraft?.background_settings || {})
                     }
                 };
 
@@ -303,6 +528,14 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
 
         saveDraftToStorage(portfolio.username, portfolio).catch(() => {});
 
+        // Save ongoing active session to browser storage immediately
+        saveActiveSession({
+            portfolio,
+            activeSection: activeSectionRef.current,
+            timestamp: Date.now(),
+            label: 'Ongoing active session'
+        });
+
         if (typeof BroadcastChannel !== 'undefined') {
             try {
                 const channel = new BroadcastChannel('portfolio_sync_channel');
@@ -310,6 +543,34 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
                 channel.close();
             } catch (e) {}
         }
+    }, [portfolio, isPublicMode]);
+
+    // Auto-save session snapshot timeline (debounced 1200ms)
+    const autoSaveSessionTimeoutRef = useRef(null);
+    useEffect(() => {
+        if (isPublicMode || !portfolio?.username) return;
+
+        if (autoSaveSessionTimeoutRef.current) {
+            clearTimeout(autoSaveSessionTimeoutRef.current);
+        }
+
+        autoSaveSessionTimeoutRef.current = setTimeout(() => {
+            const snap = saveSessionSnapshot({
+                portfolio,
+                activeSection: activeSectionRef.current,
+                label: `Auto-saved session progress`,
+                type: 'auto'
+            });
+            if (snap) {
+                setSessionSnapshots(loadSessionSnapshots());
+            }
+        }, 1200);
+
+        return () => {
+            if (autoSaveSessionTimeoutRef.current) {
+                clearTimeout(autoSaveSessionTimeoutRef.current);
+            }
+        };
     }, [portfolio, isPublicMode]);
 
     useEffect(() => {
@@ -439,6 +700,7 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
 
     const updateField = (path, value) => {
         setPortfolio(prev => {
+            pushHistoryState(prev, path);
             const copy = JSON.parse(JSON.stringify(prev));
             const keys = path.split('.');
             let current = copy;
@@ -453,6 +715,7 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
 
     const resetSection = (sectionName) => {
         setPortfolio(prev => {
+            pushHistoryState(prev, `reset_${sectionName}`, true);
             const copy = JSON.parse(JSON.stringify(prev));
             switch (sectionName) {
                 case 'home':
@@ -498,6 +761,14 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
 
     const resetAllToDemo = async () => {
         try {
+            saveSessionSnapshot({
+                portfolio: portfolioRef.current,
+                activeSection: activeSectionRef.current,
+                label: 'Pre-Reset Demo Backup',
+                type: 'backup',
+            });
+            pushHistoryState(portfolioRef.current, 'reset_all', true);
+
             if (typeof localStorage !== 'undefined') {
                 const keysToRemove = [];
                 for (let i = 0; i < localStorage.length; i++) {
@@ -515,7 +786,7 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
             setPortfolio(DEFAULT_PORTFOLIO);
             setPublishedSlug(null);
             setPublishedUrl(null);
-            setSuccess('Reset all portfolio sections to clean generic demo data!');
+            setSuccess('Reset all portfolio sections to clean generic demo data! (Undo anytime via History)');
             setTimeout(() => setSuccess(null), 3500);
         } catch (e) {
             console.error('Failed to reset to demo:', e);
@@ -637,6 +908,7 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
             if (!parsed.username) {
                 parsed.username = 'imported_portfolio';
             }
+            pushHistoryState(portfolioRef.current, 'import_json', true);
             setPortfolio(parsed);
             setSuccess('Portfolio configuration imported successfully!');
             setTimeout(() => setSuccess(null), 2000);
@@ -680,6 +952,18 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
                 setDeviceMode,
                 activeSection,
                 setActiveSection,
+                // Session saving & restore capabilities
+                undo,
+                redo,
+                canUndo,
+                canRedo,
+                sessionSnapshots,
+                restoreSessionSnapshot,
+                saveManualCheckpoint,
+                restoreLastSession,
+                clearSessionHistory,
+                recoveredSessionNotice,
+                setRecoveredSessionNotice,
             }}
         >
             {children}

@@ -276,3 +276,145 @@ export const loadPublishedCache = async (slug) => {
 
     return null;
 };
+
+export const SESSION_ACTIVE_KEY = 'standout_active_session';
+export const SESSION_SNAPSHOTS_KEY = 'standout_session_snapshots';
+export const MAX_SESSION_SNAPSHOTS = 50;
+
+export const getPortfolioSummary = (portfolio) => {
+    if (!portfolio) return 'Empty snapshot';
+    const projCount = Array.isArray(portfolio.projects) ? portfolio.projects.length : 0;
+    let skillCount = 0;
+    if (Array.isArray(portfolio.skills_categories)) {
+        portfolio.skills_categories.forEach(cat => {
+            if (Array.isArray(cat?.skills)) skillCount += cat.skills.length;
+        });
+    }
+    const certCount = Array.isArray(portfolio.certifications) ? portfolio.certifications.length : 0;
+    const themeName = portfolio.appearance?.themeName || 'Default';
+    return `${projCount} project${projCount === 1 ? '' : 's'}, ${skillCount} skill${skillCount === 1 ? '' : 's'}, ${certCount} cert${certCount === 1 ? '' : 's'} • ${themeName}`;
+};
+
+export const saveActiveSession = (sessionData) => {
+    if (typeof window === 'undefined' || !sessionData) return false;
+    try {
+        const payload = {
+            ...sessionData,
+            timestamp: sessionData.timestamp || Date.now(),
+        };
+        const serialized = JSON.stringify(payload);
+        if (!isLegacyOrPersonalIdentifier(serialized)) {
+            localStorage.setItem(SESSION_ACTIVE_KEY, serialized);
+            if (window.sessionStorage) {
+                try {
+                    sessionStorage.setItem(SESSION_ACTIVE_KEY, serialized);
+                } catch (e) {}
+            }
+            return true;
+        }
+    } catch (e) {
+        console.warn('saveActiveSession warning:', e);
+    }
+    return false;
+};
+
+export const loadActiveSession = () => {
+    if (typeof window === 'undefined') return null;
+    try {
+        const raw = localStorage.getItem(SESSION_ACTIVE_KEY) || (window.sessionStorage ? sessionStorage.getItem(SESSION_ACTIVE_KEY) : null);
+        if (raw && !isLegacyOrPersonalIdentifier(raw)) {
+            return JSON.parse(raw);
+        }
+    } catch (e) {
+        console.warn('loadActiveSession warning:', e);
+    }
+    return null;
+};
+
+export const clearActiveSession = () => {
+    if (typeof window === 'undefined') return;
+    try {
+        localStorage.removeItem(SESSION_ACTIVE_KEY);
+        if (window.sessionStorage) {
+            sessionStorage.removeItem(SESSION_ACTIVE_KEY);
+        }
+    } catch (e) {}
+};
+
+export const saveSessionSnapshot = ({ portfolio, activeSection, label, type = 'auto' }) => {
+    if (typeof window === 'undefined' || !portfolio) return null;
+    try {
+        const existing = loadSessionSnapshots();
+        const now = Date.now();
+        const dateObj = new Date(now);
+        const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const summary = getPortfolioSummary(portfolio);
+
+        // Prevent storing consecutive duplicate snapshots with exact same portfolio content within 10s
+        if (existing.length > 0) {
+            const latest = existing[0];
+            try {
+                if (JSON.stringify(latest.portfolio) === JSON.stringify(portfolio)) {
+                    if (now - (latest.timestamp || 0) < 10000) {
+                        return latest;
+                    }
+                }
+            } catch (err) {}
+        }
+
+        const snapshot = {
+            id: `snap_${now}_${Math.random().toString(36).substr(2, 6)}`,
+            timestamp: now,
+            timeStr,
+            dateStr: dateObj.toLocaleDateString(),
+            label: label || `Auto-saved progress (${timeStr})`,
+            type,
+            activeSection: activeSection || 'home',
+            summary,
+            portfolio: JSON.parse(JSON.stringify(portfolio)),
+        };
+
+        const serialized = JSON.stringify(snapshot);
+        if (isLegacyOrPersonalIdentifier(serialized)) return null;
+
+        const updated = [snapshot, ...existing].slice(0, MAX_SESSION_SNAPSHOTS);
+        localStorage.setItem(SESSION_SNAPSHOTS_KEY, JSON.stringify(updated));
+
+        // Keep active session in sync
+        saveActiveSession({
+            portfolio,
+            activeSection,
+            timestamp: now,
+            label: snapshot.label,
+        });
+
+        return snapshot;
+    } catch (e) {
+        console.warn('saveSessionSnapshot warning:', e);
+        return null;
+    }
+};
+
+export const loadSessionSnapshots = () => {
+    if (typeof window === 'undefined') return [];
+    try {
+        const raw = localStorage.getItem(SESSION_SNAPSHOTS_KEY);
+        if (raw && !isLegacyOrPersonalIdentifier(raw)) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+                return parsed.filter(item => item && item.portfolio && !isLegacyOrPersonalIdentifier(item));
+            }
+        }
+    } catch (e) {
+        console.warn('loadSessionSnapshots error:', e);
+    }
+    return [];
+};
+
+export const clearSessionSnapshots = () => {
+    if (typeof window === 'undefined') return;
+    try {
+        localStorage.removeItem(SESSION_SNAPSHOTS_KEY);
+    } catch (e) {}
+};
+
