@@ -19,17 +19,20 @@ CREATE INDEX IF NOT EXISTS idx_published_portfolios_username ON public.published
 ALTER TABLE public.published_portfolios ENABLE ROW LEVEL SECURITY;
 
 -- 4. Allow public anonymous read access (anyone with the link can view the portfolio)
+DROP POLICY IF EXISTS "Allow public read access to published portfolios" ON public.published_portfolios;
 CREATE POLICY "Allow public read access to published portfolios"
     ON public.published_portfolios
     FOR SELECT
     USING (true);
 
 -- 5. Allow anonymous insert and update (users can publish and update their portfolio online)
+DROP POLICY IF EXISTS "Allow public insert to published portfolios" ON public.published_portfolios;
 CREATE POLICY "Allow public insert to published portfolios"
     ON public.published_portfolios
     FOR INSERT
     WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow public update to published portfolios" ON public.published_portfolios;
 CREATE POLICY "Allow public update to published portfolios"
     ON public.published_portfolios
     FOR UPDATE
