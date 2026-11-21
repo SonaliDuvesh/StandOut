@@ -23,6 +23,11 @@ import {
     loadSessionSnapshots,
     clearSessionSnapshots,
 } from '../utils/portfolioStorage.js';
+import {
+    savePortfolioToSupabase,
+    getPortfolioFromSupabase,
+    isSupabaseConfigured
+} from '../services/supabase.js';
 
 const PortfolioContext = createContext(null);
 
@@ -824,7 +829,20 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
             portfolioAPI.save(currentWithSlug.username, currentWithSlug).catch(() => {});
         }
 
-        return encodeResult;
+        // Save to Supabase for global persistence across any visitor / device
+        if (isSupabaseConfigured()) {
+            savePortfolioToSupabase(encodeResult.slug, currentWithSlug).catch((err) => {
+                console.warn('Supabase publish background sync notice:', err);
+            });
+            if (currentWithSlug.username && currentWithSlug.username !== encodeResult.slug) {
+                savePortfolioToSupabase(currentWithSlug.username, currentWithSlug).catch(() => {});
+            }
+        }
+
+        return {
+            ...encodeResult,
+            portfolioData: currentWithSlug,
+        };
     }, [portfolio, publishedSlug]);
 
     const loadPublishedPortfolio = useCallback(async (slug, urlOrHashString = null) => {
@@ -832,6 +850,7 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
         setLoading(true);
         setError(null);
         try {
+            // 1. Direct URL hash fragment (#data=...) if user shared a portable self-contained link
             const source = urlOrHashString || (typeof window !== 'undefined' ? (window.location.hash || window.location.search) : '');
             if (source) {
                 const decoded = decodePortfolioFromUrl(source);
@@ -845,6 +864,29 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
                 }
             }
 
+            // 2. Query Supabase (Global cloud storage snapshot so remote visitors on external devices see edited data)
+            if (slug && isSupabaseConfigured()) {
+                try {
+                    let sbData = await getPortfolioFromSupabase(slug);
+                    if (!sbData) {
+                        const baseUsername = slug.replace(/-[a-z0-9]{3,5}$/, '');
+                        if (baseUsername && baseUsername !== slug) {
+                            sbData = await getPortfolioFromSupabase(baseUsername);
+                        }
+                    }
+                    if (sbData) {
+                        const merged = { ...DEFAULT_PORTFOLIO, ...sbData };
+                        setPortfolio(merged);
+                        savePublishedCache(slug, merged).catch(() => {});
+                        setLoading(false);
+                        return { success: true, portfolio: merged };
+                    }
+                } catch (sbErr) {
+                    console.warn('Supabase cloud fetch warning, falling back to local cache/server:', sbErr);
+                }
+            }
+
+            // 3. Local IndexedDB / LocalStorage cache (immediate local fast load)
             if (slug) {
                 const cached = await loadPublishedCache(slug);
                 if (cached) {
@@ -959,6 +1001,8 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
                 importJSON,
                 publishPortfolio,
                 loadPublishedPortfolio,
+                isSupabaseConfigured,
+                savePortfolioToSupabase,
                 restorePersonalDraft,
                 isPublicMode,
                 setIsPublicMode,

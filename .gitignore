@@ -52,6 +52,8 @@ staticfiles/
 *.env
 *.pem
 *.key
+!.env.example
+!frontend/.env.example
 
 # Logs
 *.log

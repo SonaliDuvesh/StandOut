@@ -2,8 +2,15 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
     Check, Copy, ExternalLink, Globe, Sparkles, X,
-    AlertTriangle, ShieldCheck, RefreshCw, Link as LinkIcon
+    AlertTriangle, ShieldCheck, RefreshCw, Link as LinkIcon,
+    Database, Cloud, Key, CheckCircle2, ChevronDown, ChevronUp
 } from 'lucide-react';
+import {
+    isSupabaseConfigured,
+    getEffectiveCredentials,
+    setSupabaseCredentials,
+    savePortfolioToSupabase
+} from '../../services/supabase';
 
 const PublishModal = ({
     isOpen,
@@ -13,6 +20,40 @@ const PublishModal = ({
 }) => {
     const [copied, setCopied] = useState(false);
     const [urlFormat, setUrlFormat] = useState('short'); // 'short' (recommended, clean) | 'portable' (with data hash)
+
+    const [supabaseActive, setSupabaseActive] = useState(() => isSupabaseConfigured());
+    const [showSupabaseSettings, setShowSupabaseSettings] = useState(false);
+    const [sbUrl, setSbUrl] = useState(() => getEffectiveCredentials().url);
+    const [sbKey, setSbKey] = useState(() => getEffectiveCredentials().key);
+    const [sbSaving, setSbSaving] = useState(false);
+    const [sbSyncMsg, setSbSyncMsg] = useState(null);
+
+    const handleSaveSupabase = async (e) => {
+        e.preventDefault();
+        setSbSaving(true);
+        setSbSyncMsg(null);
+        try {
+            setSupabaseCredentials(sbUrl, sbKey);
+            const active = Boolean(sbUrl.trim() && sbKey.trim());
+            setSupabaseActive(active);
+            if (active && publishResult?.portfolioData) {
+                const ok = await savePortfolioToSupabase(slug, publishResult.portfolioData);
+                if (ok) {
+                    setSbSyncMsg('Connected & synced successfully with Supabase!');
+                } else {
+                    setSbSyncMsg('Saved credentials! Ensure the "published_portfolios" table is created in Supabase (see supabase_schema.sql).');
+                }
+            } else if (active) {
+                setSbSyncMsg('Supabase credentials saved successfully!');
+            } else {
+                setSbSyncMsg('Supabase credentials cleared.');
+            }
+        } catch (err) {
+            setSbSyncMsg('Error saving credentials: ' + (err.message || 'Unknown error'));
+        } finally {
+            setSbSaving(false);
+        }
+    };
 
     if (!isOpen || !publishResult) return null;
 
@@ -170,6 +211,93 @@ const PublishModal = ({
                     >
                         Done
                     </button>
+                </div>
+
+                {/* Supabase Global Cloud Persistence Status */}
+                <div className="p-3.5 rounded-2xl bg-soft-cream-100 dark:bg-navy-950/70 border border-soft-cream-300 dark:border-navy-800 text-xs space-y-2">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <Database className={`w-4 h-4 ${supabaseActive ? 'text-emerald-500' : 'text-navy-400 dark:text-soft-cream-400'}`} />
+                            <span className="font-bold text-navy-800 dark:text-soft-cream-100">
+                                Global Cloud Persistence (Supabase)
+                            </span>
+                            {supabaseActive ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700">
+                                    <CheckCircle2 className="w-3 h-3" /> Connected
+                                </span>
+                            ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-700">
+                                    Local Cache Only
+                                </span>
+                            )}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setShowSupabaseSettings(prev => !prev)}
+                            className="text-[11px] font-semibold text-golden-600 dark:text-golden-400 hover:underline inline-flex items-center gap-0.5 cursor-pointer"
+                        >
+                            <span>{showSupabaseSettings ? 'Close' : (supabaseActive ? 'Settings' : 'Connect Cloud')}</span>
+                            {showSupabaseSettings ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        </button>
+                    </div>
+
+                    {supabaseActive && !showSupabaseSettings && (
+                        <p className="text-[11px] text-navy-600 dark:text-soft-cream-300">
+                            Synced to cloud snapshot. Anyone in the world opening this short URL will see your edited portfolio on any device.
+                        </p>
+                    )}
+
+                    {!supabaseActive && !showSupabaseSettings && (
+                        <p className="text-[11px] text-navy-500 dark:text-soft-cream-400">
+                            Currently saved in your browser cache. To let anyone on other phones or PCs open your short link, connect Supabase or switch to the <em>Portable Offline Link</em> above.
+                        </p>
+                    )}
+
+                    {showSupabaseSettings && (
+                        <form onSubmit={handleSaveSupabase} className="pt-2 space-y-2 border-t border-soft-cream-300 dark:border-navy-800">
+                            <div className="space-y-1">
+                                <label className="block text-[10px] font-bold uppercase tracking-wider text-navy-500 dark:text-soft-cream-400">
+                                    Supabase Project URL
+                                </label>
+                                <input
+                                    type="text"
+                                    placeholder="https://xyzcompany.supabase.co"
+                                    value={sbUrl}
+                                    onChange={(e) => setSbUrl(e.target.value)}
+                                    className="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border border-soft-cream-300 dark:border-navy-700 bg-white dark:bg-navy-900 text-navy-900 dark:text-soft-cream-100 focus:outline-hidden focus:ring-1 focus:ring-golden-500"
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="block text-[10px] font-bold uppercase tracking-wider text-navy-500 dark:text-soft-cream-400">
+                                    Supabase Anon Public Key
+                                </label>
+                                <input
+                                    type="password"
+                                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                                    value={sbKey}
+                                    onChange={(e) => setSbKey(e.target.value)}
+                                    className="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border border-soft-cream-300 dark:border-navy-700 bg-white dark:bg-navy-900 text-navy-900 dark:text-soft-cream-100 focus:outline-hidden focus:ring-1 focus:ring-golden-500"
+                                />
+                            </div>
+                            <div className="flex items-center justify-between pt-1">
+                                <span className="text-[10px] text-navy-400 dark:text-soft-cream-400">
+                                    Stored securely in browser (or define in frontend/.env).
+                                </span>
+                                <button
+                                    type="submit"
+                                    disabled={sbSaving}
+                                    className="px-3 py-1 rounded-lg bg-golden-500 hover:bg-golden-600 text-white font-bold text-xs cursor-pointer shadow-xs disabled:opacity-50"
+                                >
+                                    {sbSaving ? 'Saving...' : 'Save & Sync Snapshot'}
+                                </button>
+                            </div>
+                            {sbSyncMsg && (
+                                <div className={`text-[11px] p-2 rounded-lg ${sbSyncMsg.includes('Error') ? 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20' : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20'}`}>
+                                    {sbSyncMsg}
+                                </div>
+                            )}
+                        </form>
+                    )}
                 </div>
 
                 {assetCheck?.hasLargeAssets && (
