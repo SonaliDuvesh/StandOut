@@ -214,10 +214,15 @@ export const projectsAPI = {
     delete: (id) => api.delete(`/projects/${id}/`),
     syncWithBackend: () => api.get('/projects/').catch(() => {}),
 
-    fetchLiveGitHub: async (username = 'username') => {
+    fetchLiveGitHub: async (username = 'username', customToken = null) => {
         try {
+            const token = (customToken !== null ? customToken : (typeof githubAPI !== 'undefined' ? githubAPI.getToken() : '')).trim();
+            const headers = { Accept: 'application/vnd.github.v3+json' };
+            if (token) {
+                headers.Authorization = `Bearer ${token}`;
+            }
             const res = await fetch(`https://api.github.com/users/${username}/repos?sort=updated&per_page=100`, {
-                headers: { Accept: 'application/vnd.github.v3+json' },
+                headers,
             });
             if (!res.ok) {
                 throw new Error(`GitHub API error: ${res.status}`);
@@ -234,7 +239,7 @@ export const projectsAPI = {
             }
             return formatted;
         } catch (err) {
-            console.warn('Direct GitHub fetch failed, attempting cached fallback:', err);
+            console.warn('Direct GitHub fetch failed, attempting cached fallback:', err.message || err);
             const cached = localStorage.getItem('github_projects_cache_v2');
             if (cached) {
                 try {
@@ -273,6 +278,38 @@ export const contactAPI = {
 };
 
 export const githubAPI = {
+    TOKEN_STORAGE_KEY: 'standout_github_pat',
+
+    getToken: () => {
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                return localStorage.getItem('standout_github_pat') || '';
+            }
+        } catch (e) {}
+        return '';
+    },
+
+    setToken: (token) => {
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                const cleaned = (token || '').trim();
+                if (cleaned) {
+                    localStorage.setItem('standout_github_pat', cleaned);
+                } else {
+                    localStorage.removeItem('standout_github_pat');
+                }
+            }
+        } catch (e) {}
+    },
+
+    clearToken: () => {
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                localStorage.removeItem('standout_github_pat');
+            }
+        } catch (e) {}
+    },
+
     extractUsername: (input) => {
         if (!input) return '';
         const trimmed = input.trim();
@@ -283,22 +320,40 @@ export const githubAPI = {
         return trimmed.replace(/^@/, '').split('/')[0].trim();
     },
 
-    fetchUserRepos: async (username) => {
+    fetchUserRepos: async (username, customToken = null) => {
         const cleanUser = githubAPI.extractUsername(username);
         if (!cleanUser) {
             throw new Error('Please enter a valid GitHub username or profile URL.');
         }
 
+        const token = (customToken !== null ? customToken : githubAPI.getToken() || '').trim();
+        const headers = {
+            Accept: 'application/vnd.github.v3+json',
+        };
+        if (token) {
+            headers.Authorization = `Bearer ${token}`;
+        }
+
         try {
-            const response = await fetch(`https://api.github.com/users/${encodeURIComponent(cleanUser)}/repos?per_page=100&sort=updated`);
-            
+            const response = await fetch(
+                `https://api.github.com/users/${encodeURIComponent(cleanUser)}/repos?per_page=100&sort=updated`,
+                { headers }
+            );
+
+            if (response.status === 401) {
+                throw new Error('GitHub authentication failed: Invalid or expired Personal Access Token. Please check your token or leave it blank to proceed unauthenticated.');
+            }
             if (response.status === 404) {
                 throw new Error(`GitHub user "${cleanUser}" was not found.`);
             }
             if (response.status === 403) {
                 const resetHeader = response.headers.get('x-ratelimit-reset');
                 const resetTime = resetHeader ? new Date(parseInt(resetHeader) * 1000).toLocaleTimeString() : 'soon';
-                throw new Error(`GitHub API rate limit exceeded. Please try again after ${resetTime} or enter repositories manually.`);
+                if (token) {
+                    throw new Error(`GitHub API rate limit exceeded even with authenticated token. Rate limit resets at ${resetTime}.`);
+                } else {
+                    throw new Error(`GitHub API rate limit exceeded. Please try again after ${resetTime}, paste a Personal Access Token below (5,000 req/hr), or enter repositories manually.`);
+                }
             }
             if (!response.ok) {
                 throw new Error(`GitHub API error: ${response.statusText}`);
@@ -311,6 +366,11 @@ export const githubAPI = {
 
             const formatted = repos.map(formatRepo);
 
+            const rawHeaders = {};
+            if (token) {
+                rawHeaders.Authorization = `Bearer ${token}`;
+            }
+
             const enriched = await Promise.all(
                 formatted.map(async (repo) => {
                     if (repo.image_url) return repo;
@@ -320,7 +380,10 @@ export const githubAPI = {
                         const owner = cleanUser;
                         const readmeRes = await fetch(
                             `https://raw.githubusercontent.com/${owner}/${repo.name}/${defaultBranch}/README.md`,
-                            { signal: AbortSignal.timeout ? AbortSignal.timeout(3000) : undefined }
+                            {
+                                headers: rawHeaders,
+                                signal: AbortSignal.timeout ? AbortSignal.timeout(3000) : undefined
+                            }
                         );
                         if (readmeRes.ok) {
                             const markdown = await readmeRes.text();
@@ -348,7 +411,10 @@ export const githubAPI = {
                             try {
                                 const pkgRes = await fetch(
                                     `https://raw.githubusercontent.com/${owner}/${repo.name}/${defaultBranch}/package.json`,
-                                    { signal: AbortSignal.timeout ? AbortSignal.timeout(2000) : undefined }
+                                    {
+                                        headers: rawHeaders,
+                                        signal: AbortSignal.timeout ? AbortSignal.timeout(2000) : undefined
+                                    }
                                 );
                                 if (pkgRes.ok) {
                                     const pkgData = await pkgRes.json();
@@ -377,9 +443,9 @@ export const githubAPI = {
             );
 
             return enriched;
-        } catch (error) {
-            console.error('Failed to fetch GitHub repositories:', error);
-            throw error;
+        } catch (err) {
+            console.error('Failed to fetch GitHub repositories:', err.message || 'API error');
+            throw err;
         }
     },
 };
