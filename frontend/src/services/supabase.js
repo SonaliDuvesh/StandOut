@@ -50,7 +50,7 @@ export const testSupabaseConnection = async () => {
     const client = getSupabaseClient();
     if (!client) return { success: false, error: 'Supabase credentials not configured' };
     try {
-        const { data, error } = await client.from('published_portfolios').select('id').limit(1);
+        const { error } = await client.from('published_portfolios').select('id').limit(1);
         if (error) return { success: false, error: error.message };
         return { success: true };
     } catch (err) {
@@ -58,18 +58,34 @@ export const testSupabaseConnection = async () => {
     }
 };
 
-export const savePortfolioToSupabase = async (slug, portfolioData) => {
+/**
+ * Save / upsert a portfolio snapshot into Supabase online database
+ */
+export const savePortfolioToSupabase = async (identifier, portfolioData) => {
     const client = getSupabaseClient();
-    if (!client || !slug || !portfolioData) return false;
+    if (!client || !portfolioData) return false;
 
-    const cleanSlug = slug.trim().toLowerCase();
+    const primarySlug = (
+        portfolioData.published_slug ||
+        identifier ||
+        portfolioData.username ||
+        'default'
+    ).trim().toLowerCase();
+
+    const username = (
+        portfolioData.username ||
+        identifier ||
+        'default'
+    ).trim().toLowerCase();
+
     try {
+        // Upsert by primary slug
         const { error } = await client
             .from('published_portfolios')
             .upsert(
                 {
-                    slug: cleanSlug,
-                    username: portfolioData.username || cleanSlug,
+                    slug: primarySlug,
+                    username: username,
                     portfolio_data: portfolioData,
                     updated_at: new Date().toISOString(),
                 },
@@ -77,40 +93,139 @@ export const savePortfolioToSupabase = async (slug, portfolioData) => {
             );
 
         if (error) {
-            console.warn('Supabase publish note:', error.message);
+            console.warn('Supabase save note:', error.message);
             return false;
         }
+
+        // If username is distinct from slug and not 'username' / 'default', also upsert username key
+        // so both /p/:slug and /:username can resolve immediately
+        if (username && username !== primarySlug && username !== 'username' && username !== 'default') {
+            await client
+                .from('published_portfolios')
+                .upsert(
+                    {
+                        slug: username,
+                        username: username,
+                        portfolio_data: portfolioData,
+                        updated_at: new Date().toISOString(),
+                    },
+                    { onConflict: 'slug' }
+                );
+        }
+
         return true;
     } catch (err) {
-        console.warn('Supabase publish exception:', err.message);
+        console.warn('Supabase save exception:', err.message);
         return false;
     }
 };
 
-export const getPortfolioFromSupabase = async (slug) => {
+/**
+ * Retrieve a portfolio snapshot from Supabase by slug, username, or latest record
+ */
+export const getPortfolioFromSupabase = async (identifier) => {
     const client = getSupabaseClient();
-    if (!client || !slug) return null;
+    if (!client) return null;
 
-    const cleanSlug = slug.trim().toLowerCase();
+    const clean = (identifier || '').trim().toLowerCase();
+
     try {
-        const { data, error } = await client
-            .from('published_portfolios')
-            .select('portfolio_data')
-            .eq('slug', cleanSlug)
-            .maybeSingle();
+        // 1. If a specific identifier is provided (not 'username' / 'default')
+        if (clean && clean !== 'username' && clean !== 'default') {
+            // Check exact slug
+            let { data, error } = await client
+                .from('published_portfolios')
+                .select('portfolio_data')
+                .eq('slug', clean)
+                .maybeSingle();
 
-        if (error) {
-            console.warn('Supabase fetch note:', error.message);
-            return null;
+            if (data && data.portfolio_data) {
+                return data.portfolio_data;
+            }
+
+            // Check exact username
+            const userRes = await client
+                .from('published_portfolios')
+                .select('portfolio_data')
+                .eq('username', clean)
+                .order('updated_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (userRes.data && userRes.data.portfolio_data) {
+                return userRes.data.portfolio_data;
+            }
+
+            // Check without suffix (e.g. "sonali-a1b2" -> "sonali")
+            const base = clean.replace(/-[a-z0-9]{3,5}$/, '');
+            if (base && base !== clean) {
+                const baseRes = await client
+                    .from('published_portfolios')
+                    .select('portfolio_data')
+                    .or(`slug.eq.${base},username.eq.${base}`)
+                    .order('updated_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+
+                if (baseRes.data && baseRes.data.portfolio_data) {
+                    return baseRes.data.portfolio_data;
+                }
+            }
         }
 
-        if (data && data.portfolio_data) {
-            return data.portfolio_data;
+        // 2. Fallback: retrieve the most recently updated portfolio in the database
+        // (Enables visitors to see the published portfolio when opening root URL '/' or clean site)
+        const latestRes = await client
+            .from('published_portfolios')
+            .select('portfolio_data')
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (latestRes.data && latestRes.data.portfolio_data) {
+            return latestRes.data.portfolio_data;
         }
     } catch (err) {
         console.warn('Supabase fetch exception:', err.message);
     }
     return null;
+};
+
+/**
+ * Retrieve the most recently updated portfolio from Supabase
+ */
+export const getLatestPortfolioFromSupabase = async () => {
+    return getPortfolioFromSupabase(null);
+};
+
+/**
+ * List all portfolios saved in Supabase
+ */
+export const listPortfoliosFromSupabase = async () => {
+    const client = getSupabaseClient();
+    if (!client) return [];
+    try {
+        const { data, error } = await client
+            .from('published_portfolios')
+            .select('slug, username, updated_at, portfolio_data')
+            .order('updated_at', { ascending: false });
+
+        if (error) {
+            console.warn('Supabase list note:', error.message);
+            return [];
+        }
+
+        return (data || []).map(row => ({
+            username: row.username || row.slug,
+            slug: row.slug,
+            full_name: row.portfolio_data?.full_name || row.portfolio_data?.display_name || row.username,
+            title: row.portfolio_data?.title || '',
+            updated_at: row.updated_at,
+        }));
+    } catch (err) {
+        console.warn('Supabase list error:', err.message);
+        return [];
+    }
 };
 
 export const setSupabaseCredentials = (url, key) => {

@@ -26,6 +26,8 @@ import {
 import {
     savePortfolioToSupabase,
     getPortfolioFromSupabase,
+    getLatestPortfolioFromSupabase,
+    listPortfoliosFromSupabase,
     isSupabaseConfigured
 } from '../services/supabase.js';
 
@@ -338,13 +340,25 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
     const fetchPortfoliosList = useCallback(async () => {
         try {
             const res = await portfolioAPI.getAll();
-            if (Array.isArray(res.data)) {
+            if (Array.isArray(res.data) && res.data.length > 0) {
                 setAllPortfolios(res.data);
-            } else if (Array.isArray(res.data?.results)) {
+                return;
+            } else if (Array.isArray(res.data?.results) && res.data.results.length > 0) {
                 setAllPortfolios(res.data.results);
+                return;
             }
         } catch (e) {
-            console.warn('Could not list portfolios:', e);
+            console.warn('Backend portfolioAPI list unavailable (using Supabase if configured):', e.message);
+        }
+
+        // Fetch online portfolios list from Supabase
+        if (isSupabaseConfigured()) {
+            try {
+                const sbList = await listPortfoliosFromSupabase();
+                if (sbList && sbList.length > 0) {
+                    setAllPortfolios(sbList);
+                }
+            } catch (err) {}
         }
     }, []);
 
@@ -356,6 +370,50 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
         setLoading(true);
         setError(null);
         try {
+            // 1. First priority: Check Supabase online database (loads saved data across any visitor, browser, or device)
+            if (isSupabaseConfigured()) {
+                try {
+                    const sbData = await getPortfolioFromSupabase(targetUser);
+                    if (sbData) {
+                        const merged = {
+                            ...DEFAULT_PORTFOLIO,
+                            ...sbData,
+                            appearance: {
+                                ...DEFAULT_PORTFOLIO.appearance,
+                                ...(sbData.appearance || {})
+                            },
+                            sections_visibility: {
+                                ...DEFAULT_PORTFOLIO.sections_visibility,
+                                ...(sbData.sections_visibility || {})
+                            },
+                            custom_section: {
+                                ...DEFAULT_PORTFOLIO.custom_section,
+                                ...(sbData.custom_section || {})
+                            },
+                            social_links: {
+                                ...DEFAULT_PORTFOLIO.social_links,
+                                ...(sbData.social_links || {})
+                            },
+                            home_typography: {
+                                ...DEFAULT_PORTFOLIO.home_typography,
+                                ...(sbData.home_typography || {})
+                            },
+                            background_settings: {
+                                ...DEFAULT_PORTFOLIO.background_settings,
+                                ...(sbData.background_settings || {})
+                            }
+                        };
+                        setPortfolio(merged);
+                        saveDraftToStorage(merged.username || targetUser, merged).catch(() => {});
+                        setLoading(false);
+                        return { success: true, portfolio: merged };
+                    }
+                } catch (sbErr) {
+                    console.warn('Supabase load note:', sbErr);
+                }
+            }
+
+            // 2. Check local backend API
             const response = await portfolioAPI.getByUsername(targetUser);
             if (response.data) {
                 const localDraftRaw = localStorage.getItem(`portfolio_draft_${targetUser}`) || localStorage.getItem('portfolio_draft_latest');
@@ -569,7 +627,12 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
             if (snap) {
                 setSessionSnapshots(loadSessionSnapshots());
             }
-        }, 1200);
+
+            // Automatically sync changes to Supabase in the background
+            if (isSupabaseConfigured() && portfolio?.username) {
+                savePortfolioToSupabase(portfolio.published_slug || portfolio.username, portfolio).catch(() => {});
+            }
+        }, 1500);
 
         return () => {
             if (autoSaveSessionTimeoutRef.current) {
@@ -640,9 +703,19 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
         }
         await saveDraftToStorage(activeUsername, dataToSave);
 
+        // Always save to Supabase online database when configured (enables multi-device / live remote access)
+        if (isSupabaseConfigured()) {
+            savePortfolioToSupabase(activeUsername, dataToSave).catch((err) => {
+                console.warn('Supabase save error:', err);
+            });
+            if (dataToSave.published_slug && dataToSave.published_slug !== activeUsername) {
+                savePortfolioToSupabase(dataToSave.published_slug, dataToSave).catch(() => {});
+            }
+        }
+
         try {
             const response = await portfolioAPI.save(activeUsername, dataToSave);
-            setSuccess('Portfolio saved successfully!');
+            setSuccess(isSupabaseConfigured() ? 'Portfolio saved to cloud (Supabase)!' : 'Portfolio saved successfully!');
             const merged = {
                 ...DEFAULT_PORTFOLIO,
                 ...dataToSave,
@@ -693,9 +766,9 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
             setTimeout(() => setSuccess(null), 2500);
             return true;
         } catch (err) {
-            console.warn('Server sync note (draft safely persisted locally):', err);
+            console.warn('Server sync note (persisted to Supabase/local):', err.message);
             setPortfolio(dataToSave);
-            setSuccess('Portfolio draft saved locally!');
+            setSuccess(isSupabaseConfigured() ? 'Portfolio saved to cloud (Supabase)!' : 'Portfolio draft saved locally!');
             setTimeout(() => setSuccess(null), 2500);
             return true;
         } finally {

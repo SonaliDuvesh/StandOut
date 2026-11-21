@@ -44,8 +44,11 @@ const PortfolioView = ({ isPreview = false, isPublishedView = false }) => {
                         setLoadError(null);
                     }
                 });
-            } else if (username && username !== portfolio.username) {
+            } else if (username) {
                 loadPortfolio(username);
+            } else if (!isPreview) {
+                // When visitors open the root URL '/' on deployed site, load the saved portfolio from Supabase
+                loadPortfolio(portfolio?.username || 'username');
             }
         };
 
