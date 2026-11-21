@@ -1,9 +1,26 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Vite replaces `import.meta.env.VITE_*` statically at build time.
-// Note: Optional chaining (?.) must NOT be used on import.meta.env for static replacement to work.
-const envUrl = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_URL) || '';
-const envKey = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) || '';
+// Vite replaces `import.meta.env.VITE_*` and `__SUPABASE_*__` statically at build time.
+const envUrl = (
+    (typeof __SUPABASE_URL__ !== 'undefined' && __SUPABASE_URL__) ||
+    (typeof import.meta !== 'undefined' && import.meta.env && (
+        import.meta.env.VITE_SUPABASE_URL ||
+        import.meta.env.VITE_SUPABASE_PROJECT_URL ||
+        import.meta.env.VITE_PUBLIC_SUPABASE_URL
+    )) ||
+    ''
+);
+
+const envKey = (
+    (typeof __SUPABASE_KEY__ !== 'undefined' && __SUPABASE_KEY__) ||
+    (typeof import.meta !== 'undefined' && import.meta.env && (
+        import.meta.env.VITE_SUPABASE_ANON_KEY ||
+        import.meta.env.VITE_SUPABASE_KEY ||
+        import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+        import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY
+    )) ||
+    ''
+);
 
 // Allow runtime configuration from localStorage if user enters it in settings or modal
 export const getStoredConfig = () => {
