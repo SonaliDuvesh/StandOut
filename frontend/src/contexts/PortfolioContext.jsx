@@ -76,6 +76,43 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
         return DEFAULT_PORTFOLIO;
     });
 
+    // Initial online hydration from Supabase
+    useEffect(() => {
+        if (!isSupabaseConfigured()) return;
+        getPortfolioFromSupabase().then(sbData => {
+            if (sbData) {
+                setPortfolio(prev => ({
+                    ...DEFAULT_PORTFOLIO,
+                    ...sbData,
+                    appearance: {
+                        ...DEFAULT_PORTFOLIO.appearance,
+                        ...(sbData.appearance || {})
+                    },
+                    sections_visibility: {
+                        ...DEFAULT_PORTFOLIO.sections_visibility,
+                        ...(sbData.sections_visibility || {})
+                    },
+                    custom_section: {
+                        ...DEFAULT_PORTFOLIO.custom_section,
+                        ...(sbData.custom_section || {})
+                    },
+                    social_links: {
+                        ...DEFAULT_PORTFOLIO.social_links,
+                        ...(sbData.social_links || {})
+                    },
+                    home_typography: {
+                        ...DEFAULT_PORTFOLIO.home_typography,
+                        ...(sbData.home_typography || {})
+                    },
+                    background_settings: {
+                        ...DEFAULT_PORTFOLIO.background_settings,
+                        ...(sbData.background_settings || {})
+                    }
+                }));
+            }
+        }).catch(() => {});
+    }, []);
+
     const [allPortfolios, setAllPortfolios] = useState([]);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -628,9 +665,9 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
                 setSessionSnapshots(loadSessionSnapshots());
             }
 
-            // Automatically sync changes to Supabase in the background
-            if (isSupabaseConfigured() && portfolio?.username) {
-                savePortfolioToSupabase(portfolio.published_slug || portfolio.username, portfolio).catch(() => {});
+            // Automatically sync changes to Supabase online database in the background
+            if (isSupabaseConfigured()) {
+                savePortfolioToSupabase(portfolio.published_slug || portfolio.username || 'default', portfolio).catch(() => {});
             }
         }, 1500);
 
