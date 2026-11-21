@@ -6,87 +6,11 @@ const STORE_PUBLISHED = 'published_cache';
 
 let dbPromise = null;
 
-export const isLegacyOrPersonalIdentifier = (text) => {
-    if (!text) return false;
-    const str = typeof text === 'string' ? text : JSON.stringify(text);
-    const lower = str.toLowerCase();
-    return (
-        lower.includes('sonali') ||
-        lower.includes('duvesh') ||
-        lower.includes('garvit') ||
-        lower.includes('iitm') ||
-        lower.includes('iit madras')
-    );
-};
+export const isLegacyOrPersonalIdentifier = () => false;
 
-export const sanitizeStorage = () => {
-    if (typeof window === 'undefined' || !window.localStorage) return;
-    try {
-        const toRemove = [];
-        for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (!key) continue;
-            if (isLegacyOrPersonalIdentifier(key)) {
-                toRemove.push(key);
-                continue;
-            }
-            const val = localStorage.getItem(key);
-            if (val && isLegacyOrPersonalIdentifier(val)) {
-                toRemove.push(key);
-            }
-        }
-        toRemove.forEach((k) => {
-            try {
-                localStorage.removeItem(k);
-            } catch (e) {}
-        });
+export const sanitizeStorage = () => {};
 
-        const pubSlug = localStorage.getItem('my_published_portfolio_slug');
-        if (pubSlug && isLegacyOrPersonalIdentifier(pubSlug)) {
-            localStorage.removeItem('my_published_portfolio_slug');
-            localStorage.removeItem('my_published_portfolio_url');
-        }
-
-        const lastUser = localStorage.getItem('portfolio_last_active_user');
-        if (lastUser && isLegacyOrPersonalIdentifier(lastUser)) {
-            localStorage.removeItem('portfolio_last_active_user');
-        }
-    } catch (e) {
-        console.warn('Storage sanitization note:', e);
-    }
-};
-
-export const cleanIndexedDBPersonalData = async () => {
-    try {
-        const db = await getIndexedDB();
-        if (!db) return;
-        const tx = db.transaction([STORE_DRAFTS, STORE_PUBLISHED], 'readwrite');
-        const draftStore = tx.objectStore(STORE_DRAFTS);
-        const pubStore = tx.objectStore(STORE_PUBLISHED);
-
-        const draftReq = draftStore.getAll();
-        draftReq.onsuccess = () => {
-            const drafts = draftReq.result || [];
-            drafts.forEach((d) => {
-                if (isLegacyOrPersonalIdentifier(d)) {
-                    if (d.username) draftStore.delete(d.username);
-                }
-            });
-        };
-
-        const pubReq = pubStore.getAll();
-        pubReq.onsuccess = () => {
-            const pubs = pubReq.result || [];
-            pubs.forEach((p) => {
-                if (isLegacyOrPersonalIdentifier(p)) {
-                    if (p.slug) pubStore.delete(p.slug);
-                }
-            });
-        };
-    } catch (e) {
-        console.warn('IndexedDB cleanup note:', e);
-    }
-};
+export const cleanIndexedDBPersonalData = async () => {};
 
 export const getIndexedDB = () => {
     if (typeof window === 'undefined' || !window.indexedDB) {

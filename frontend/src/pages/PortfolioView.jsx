@@ -47,8 +47,8 @@ const PortfolioView = ({ isPreview = false, isPublishedView = false }) => {
             } else if (username) {
                 loadPortfolio(username);
             } else if (!isPreview) {
-                // When visitors open the root URL '/' on deployed site, load the saved portfolio from Supabase
-                loadPortfolio(portfolio?.username || 'username');
+                // When visitors open the root URL '/' on deployed site, load the latest saved portfolio from Supabase
+                loadPortfolio();
             }
         };
 
@@ -58,7 +58,7 @@ const PortfolioView = ({ isPreview = false, isPublishedView = false }) => {
             isMounted = false;
             window.removeEventListener('hashchange', handleLoad);
         };
-    }, [slug, username, portfolio.username, loadPortfolio, loadPublishedPortfolio]);
+    }, [slug, username, loadPortfolio, loadPublishedPortfolio, isPreview]);
 
     useEffect(() => {
         const observerOptions = {

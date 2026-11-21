@@ -6,6 +6,7 @@ import {
     decodePortfolioFromUrl,
     generatePortfolioSlug,
     nameToUsernameSlug,
+    mergePortfolio,
 } from '../utils/urlPortfolio.js';
 import {
     saveDraftToStorage,
@@ -81,34 +82,7 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
         if (!isSupabaseConfigured()) return;
         getPortfolioFromSupabase().then(sbData => {
             if (sbData) {
-                setPortfolio(prev => ({
-                    ...DEFAULT_PORTFOLIO,
-                    ...sbData,
-                    appearance: {
-                        ...DEFAULT_PORTFOLIO.appearance,
-                        ...(sbData.appearance || {})
-                    },
-                    sections_visibility: {
-                        ...DEFAULT_PORTFOLIO.sections_visibility,
-                        ...(sbData.sections_visibility || {})
-                    },
-                    custom_section: {
-                        ...DEFAULT_PORTFOLIO.custom_section,
-                        ...(sbData.custom_section || {})
-                    },
-                    social_links: {
-                        ...DEFAULT_PORTFOLIO.social_links,
-                        ...(sbData.social_links || {})
-                    },
-                    home_typography: {
-                        ...DEFAULT_PORTFOLIO.home_typography,
-                        ...(sbData.home_typography || {})
-                    },
-                    background_settings: {
-                        ...DEFAULT_PORTFOLIO.background_settings,
-                        ...(sbData.background_settings || {})
-                    }
-                }));
+                setPortfolio(mergePortfolio(sbData));
             }
         }).catch(() => {});
     }, []);
@@ -401,9 +375,6 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
 
     const loadPortfolio = useCallback(async (usernameToLoad) => {
         let targetUser = usernameToLoad || portfolio?.username || (typeof localStorage !== 'undefined' ? localStorage.getItem('portfolio_last_active_user') : null) || 'username';
-        if (isLegacyOrPersonalIdentifier(targetUser)) {
-            targetUser = 'username';
-        }
         setLoading(true);
         setError(null);
         try {
@@ -412,34 +383,7 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
                 try {
                     const sbData = await getPortfolioFromSupabase(targetUser);
                     if (sbData) {
-                        const merged = {
-                            ...DEFAULT_PORTFOLIO,
-                            ...sbData,
-                            appearance: {
-                                ...DEFAULT_PORTFOLIO.appearance,
-                                ...(sbData.appearance || {})
-                            },
-                            sections_visibility: {
-                                ...DEFAULT_PORTFOLIO.sections_visibility,
-                                ...(sbData.sections_visibility || {})
-                            },
-                            custom_section: {
-                                ...DEFAULT_PORTFOLIO.custom_section,
-                                ...(sbData.custom_section || {})
-                            },
-                            social_links: {
-                                ...DEFAULT_PORTFOLIO.social_links,
-                                ...(sbData.social_links || {})
-                            },
-                            home_typography: {
-                                ...DEFAULT_PORTFOLIO.home_typography,
-                                ...(sbData.home_typography || {})
-                            },
-                            background_settings: {
-                                ...DEFAULT_PORTFOLIO.background_settings,
-                                ...(sbData.background_settings || {})
-                            }
-                        };
+                        const merged = mergePortfolio(sbData);
                         setPortfolio(merged);
                         saveDraftToStorage(merged.username || targetUser, merged).catch(() => {});
                         setLoading(false);
@@ -999,7 +943,7 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
                         }
                     }
                     if (sbData) {
-                        const merged = { ...DEFAULT_PORTFOLIO, ...sbData };
+                        const merged = mergePortfolio(sbData);
                         setPortfolio(merged);
                         savePublishedCache(slug, merged).catch(() => {});
                         setLoading(false);

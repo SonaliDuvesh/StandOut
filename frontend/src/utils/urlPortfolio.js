@@ -28,6 +28,46 @@ export const generatePortfolioSlug = (fullNameOrUsername) => {
     return `${clean}-${rand}`;
 };
 
+export const mergePortfolio = (parsed) => {
+    if (!parsed || typeof parsed !== 'object') {
+        return { ...DEFAULT_PORTFOLIO };
+    }
+    return {
+        ...DEFAULT_PORTFOLIO,
+        ...parsed,
+        appearance: {
+            ...DEFAULT_PORTFOLIO.appearance,
+            ...(parsed.appearance || {})
+        },
+        sections_visibility: {
+            ...DEFAULT_PORTFOLIO.sections_visibility,
+            ...(parsed.sections_visibility || {})
+        },
+        custom_section: {
+            ...DEFAULT_PORTFOLIO.custom_section,
+            ...(parsed.custom_section || {})
+        },
+        social_links: {
+            ...DEFAULT_PORTFOLIO.social_links,
+            ...(parsed.social_links || {})
+        },
+        home_typography: {
+            ...DEFAULT_PORTFOLIO.home_typography,
+            ...(parsed.home_typography || {})
+        },
+        background_settings: {
+            ...DEFAULT_PORTFOLIO.background_settings,
+            ...(parsed.background_settings || {})
+        },
+        projects: Array.isArray(parsed.projects) ? parsed.projects : (DEFAULT_PORTFOLIO.projects || []),
+        certifications: Array.isArray(parsed.certifications) ? parsed.certifications : (DEFAULT_PORTFOLIO.certifications || []),
+        skills_categories: Array.isArray(parsed.skills_categories) ? parsed.skills_categories : (DEFAULT_PORTFOLIO.skills_categories || []),
+        skills: Array.isArray(parsed.skills) ? parsed.skills : (DEFAULT_PORTFOLIO.skills || []),
+        about_highlights: Array.isArray(parsed.about_highlights) ? parsed.about_highlights : (DEFAULT_PORTFOLIO.about_highlights || []),
+        education: Array.isArray(parsed.education) ? parsed.education : (DEFAULT_PORTFOLIO.education || []),
+    };
+};
+
 export const uint8ToBase64Url = (uint8Array) => {
     let binary = '';
     const CHUNK_SIZE = 8192;
@@ -227,40 +267,7 @@ export const decodePortfolioFromUrl = (urlOrHashString) => {
             return { success: false, error: 'Parsed payload is not an object' };
         }
 
-        const merged = {
-            ...DEFAULT_PORTFOLIO,
-            ...parsed,
-            appearance: {
-                ...DEFAULT_PORTFOLIO.appearance,
-                ...(parsed.appearance || {})
-            },
-            sections_visibility: {
-                ...DEFAULT_PORTFOLIO.sections_visibility,
-                ...(parsed.sections_visibility || {})
-            },
-            custom_section: {
-                ...DEFAULT_PORTFOLIO.custom_section,
-                ...(parsed.custom_section || {})
-            },
-            social_links: {
-                ...DEFAULT_PORTFOLIO.social_links,
-                ...(parsed.social_links || {})
-            },
-            home_typography: {
-                ...DEFAULT_PORTFOLIO.home_typography,
-                ...(parsed.home_typography || {})
-            },
-            background_settings: {
-                ...DEFAULT_PORTFOLIO.background_settings,
-                ...(parsed.background_settings || {})
-            },
-            projects: Array.isArray(parsed.projects) ? parsed.projects : (DEFAULT_PORTFOLIO.projects || []),
-            certifications: Array.isArray(parsed.certifications) ? parsed.certifications : (DEFAULT_PORTFOLIO.certifications || []),
-            skills_categories: Array.isArray(parsed.skills_categories) ? parsed.skills_categories : (DEFAULT_PORTFOLIO.skills_categories || []),
-            skills: Array.isArray(parsed.skills) ? parsed.skills : (DEFAULT_PORTFOLIO.skills || []),
-            about_highlights: Array.isArray(parsed.about_highlights) ? parsed.about_highlights : (DEFAULT_PORTFOLIO.about_highlights || []),
-            education: Array.isArray(parsed.education) ? parsed.education : (DEFAULT_PORTFOLIO.education || []),
-        };
+        const merged = mergePortfolio(parsed);
 
         return {
             success: true,
