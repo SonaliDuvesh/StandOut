@@ -32,7 +32,11 @@ const Hero = () => {
     }, [portfolio?.titles]);
 
     const greeting = portfolio?.greeting || "Hi there! I'm";
-    const displayName = portfolio?.display_name || portfolio?.full_name || 'Developer Name';
+    const displayName = (portfolio?.full_name && portfolio.full_name !== 'Developer Name')
+        ? (portfolio.display_name && portfolio.display_name !== portfolio.username && portfolio.display_name !== 'Developer Name'
+            ? portfolio.display_name
+            : portfolio.full_name)
+        : (portfolio?.display_name || portfolio?.full_name || 'Developer Name');
     const shortBio = portfolio?.short_bio || 'Full-stack software engineer specializing in building high-performance web applications, scalable cloud infrastructure, and modern digital experiences.';
     const social = portfolio?.social_links || {};
     const activeFloating = Array.isArray(social.floating_links) ? social.floating_links : [];
@@ -229,8 +233,8 @@ const Hero = () => {
                             {greeting}
                         </p>
 
-                        <h1 className={`${headingSizeClass} ${headingWeightClass} tracking-tight mb-2 sm:mb-3 animate-slide-up`}>
-                            <span className="gradient-text animate-gradient inline-block">
+                        <h1 className={`${headingSizeClass} ${headingWeightClass} tracking-tight mb-2 sm:mb-3 leading-[1.18] sm:leading-[1.22] animate-slide-up overflow-visible`}>
+                            <span className="gradient-text animate-gradient inline-block pb-3 sm:pb-4 pt-1 px-1 overflow-visible">
                                 {displayName}
                             </span>
                         </h1>
