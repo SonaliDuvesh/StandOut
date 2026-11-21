@@ -8,6 +8,12 @@ export default defineConfig(({ mode }) => {
 
   // Catch Supabase URL under any variable name provided in Vercel or .env
   const supabaseUrl = (
+    process.env.URL ||
+    process.env.url ||
+    env.URL ||
+    env.url ||
+    parentEnv.URL ||
+    parentEnv.url ||
     process.env.VITE_SUPABASE_URL ||
     process.env.SUPABASE_URL ||
     process.env.VITE_SUPABASE_PROJECT_URL ||
@@ -21,6 +27,12 @@ export default defineConfig(({ mode }) => {
 
   // Catch Supabase Key under any variable name provided in Vercel or .env
   const supabaseKey = (
+    process.env.key ||
+    process.env.KEY ||
+    env.key ||
+    env.KEY ||
+    parentEnv.key ||
+    parentEnv.KEY ||
     process.env.VITE_SUPABASE_ANON_KEY ||
     process.env.SUPABASE_ANON_KEY ||
     process.env.VITE_SUPABASE_KEY ||

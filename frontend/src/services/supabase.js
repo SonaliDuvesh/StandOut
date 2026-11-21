@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 const envUrl = (
     (typeof __SUPABASE_URL__ !== 'undefined' && __SUPABASE_URL__) ||
     (typeof import.meta !== 'undefined' && import.meta.env && (
+        import.meta.env.URL ||
         import.meta.env.VITE_SUPABASE_URL ||
         import.meta.env.VITE_SUPABASE_PROJECT_URL ||
         import.meta.env.VITE_PUBLIC_SUPABASE_URL
@@ -14,6 +15,8 @@ const envUrl = (
 const envKey = (
     (typeof __SUPABASE_KEY__ !== 'undefined' && __SUPABASE_KEY__) ||
     (typeof import.meta !== 'undefined' && import.meta.env && (
+        import.meta.env.key ||
+        import.meta.env.KEY ||
         import.meta.env.VITE_SUPABASE_ANON_KEY ||
         import.meta.env.VITE_SUPABASE_KEY ||
         import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
