@@ -805,7 +805,7 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
         const encodeResult = encodePortfolioToUrl(currentWithSlug, slug);
 
         setPublishedSlug(encodeResult.slug);
-        setPublishedUrl(encodeResult.fullUrl);
+        setPublishedUrl(encodeResult.shortUrl || encodeResult.fullUrl);
         setPortfolio(currentWithSlug);
 
         saveDraftToStorage(currentWithSlug.username, currentWithSlug).catch(() => {});
@@ -813,12 +813,16 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
 
         try {
             localStorage.setItem('my_published_portfolio_slug', encodeResult.slug);
-            localStorage.setItem('my_published_portfolio_url', encodeResult.fullUrl);
+            localStorage.setItem('my_published_portfolio_url', encodeResult.shortUrl || encodeResult.fullUrl);
         } catch (e) {
             console.warn('LocalStorage error on publish', e);
         }
 
-        portfolioAPI.save(currentWithSlug.username, currentWithSlug).catch(() => {});
+        // Save on server for both clean slug and username
+        portfolioAPI.save(encodeResult.slug, currentWithSlug).catch(() => {});
+        if (currentWithSlug.username && currentWithSlug.username !== encodeResult.slug) {
+            portfolioAPI.save(currentWithSlug.username, currentWithSlug).catch(() => {});
+        }
 
         return encodeResult;
     }, [portfolio, publishedSlug]);
@@ -852,15 +856,35 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
 
             if (slug) {
                 try {
-                    const serverRes = await portfolioAPI.getByUsername(slug);
-                    if (serverRes.data) {
+                    let serverRes = await portfolioAPI.getByUsername(slug);
+                    if (!serverRes?.data) {
+                        const baseUsername = slug.replace(/-[a-z0-9]{3,5}$/, '');
+                        if (baseUsername && baseUsername !== slug) {
+                            serverRes = await portfolioAPI.getByUsername(baseUsername);
+                        }
+                    }
+                    if (serverRes?.data) {
                         const merged = { ...DEFAULT_PORTFOLIO, ...serverRes.data };
                         setPortfolio(merged);
                         savePublishedCache(slug, merged).catch(() => {});
                         setLoading(false);
                         return { success: true, portfolio: merged };
                     }
-                } catch (e) {}
+                } catch (e) {
+                    try {
+                        const baseUsername = slug.replace(/-[a-z0-9]{3,5}$/, '');
+                        if (baseUsername && baseUsername !== slug) {
+                            const res = await portfolioAPI.getByUsername(baseUsername);
+                            if (res?.data) {
+                                const merged = { ...DEFAULT_PORTFOLIO, ...res.data };
+                                setPortfolio(merged);
+                                savePublishedCache(slug, merged).catch(() => {});
+                                setLoading(false);
+                                return { success: true, portfolio: merged };
+                            }
+                        }
+                    } catch (err) {}
+                }
             }
 
             setLoading(false);

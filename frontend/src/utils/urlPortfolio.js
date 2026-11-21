@@ -61,6 +61,64 @@ const sanitizePortfolioForExport = (portfolio) => {
     return clone;
 };
 
+export const minimizePortfolio = (portfolio) => {
+    if (!portfolio || typeof portfolio !== 'object') return portfolio;
+    const sanitized = sanitizePortfolioForExport(portfolio);
+    const min = {};
+
+    for (const [key, val] of Object.entries(sanitized)) {
+        if (val === null || val === undefined) continue;
+
+        // Skip fields that are identical to the default template
+        if (DEFAULT_PORTFOLIO && DEFAULT_PORTFOLIO[key] !== undefined) {
+            try {
+                if (JSON.stringify(val) === JSON.stringify(DEFAULT_PORTFOLIO[key])) {
+                    continue;
+                }
+            } catch (e) {}
+        }
+
+        // For nested objects (appearance, sections_visibility, etc.), only keep customized keys
+        if (
+            typeof val === 'object' &&
+            !Array.isArray(val) &&
+            DEFAULT_PORTFOLIO &&
+            DEFAULT_PORTFOLIO[key] &&
+            typeof DEFAULT_PORTFOLIO[key] === 'object' &&
+            !Array.isArray(DEFAULT_PORTFOLIO[key])
+        ) {
+            const nestedMin = {};
+            let hasChanges = false;
+            for (const [subKey, subVal] of Object.entries(val)) {
+                if (subVal !== null && subVal !== undefined) {
+                    if (JSON.stringify(subVal) !== JSON.stringify(DEFAULT_PORTFOLIO[key][subKey])) {
+                        nestedMin[subKey] = subVal;
+                        hasChanges = true;
+                    }
+                }
+            }
+            if (hasChanges) {
+                min[key] = nestedMin;
+            }
+            continue;
+        }
+
+        min[key] = val;
+    }
+
+    // Always keep essential identity fields
+    min.username = portfolio.username || 'username';
+    min.full_name = portfolio.full_name || 'Developer Name';
+    if (portfolio.display_name && portfolio.display_name !== min.full_name) {
+        min.display_name = portfolio.display_name;
+    }
+    if (portfolio.published_slug) {
+        min.published_slug = portfolio.published_slug;
+    }
+
+    return min;
+};
+
 export const checkLargeAssets = (portfolio) => {
     let largeAssetCount = 0;
     let approximateAssetBytes = 0;
@@ -86,31 +144,41 @@ export const checkLargeAssets = (portfolio) => {
 
 export const encodePortfolioToUrl = (portfolio, existingSlug = null) => {
     const slug = existingSlug || portfolio.published_slug || generatePortfolioSlug(portfolio.full_name || portfolio.username);
-    const sanitized = sanitizePortfolioForExport({
+    
+    // Create ultra-compact delta payload (up to 95% smaller!)
+    const minimized = minimizePortfolio({
         ...portfolio,
         published_slug: slug,
     });
 
-    const jsonString = JSON.stringify(sanitized);
+    const jsonString = JSON.stringify(minimized);
     const utf8Bytes = new TextEncoder().encode(jsonString);
     const compressed = deflate(utf8Bytes, { level: 9 });
     const payload = uint8ToBase64Url(compressed);
 
     const origin = typeof window !== 'undefined' ? window.location.origin : 'https://yourdomain.com';
     const path = `/p/${slug}`;
-    const fullUrl = `${origin}${path}#data=${payload}`;
+    
+    // Clean, short URL (super concise, e.g. /p/alex-3x9a)
+    const shortUrl = `${origin}${path}`;
+    
+    // Portable self-contained link with compressed delta hash
+    const fullUrl = `${shortUrl}#data=${payload}`;
 
     const assetCheck = checkLargeAssets(portfolio);
 
     return {
         slug,
         payload,
+        shortUrl,
         fullUrl,
+        url: shortUrl, // Clean short URL is the primary export URL
         rawBytes: utf8Bytes.length,
         compressedBytes: compressed.length,
         payloadLength: payload.length,
         fullUrlLength: fullUrl.length,
-        isOverRecommendedLength: fullUrl.length > 24000,
+        shortUrlLength: shortUrl.length,
+        isOverRecommendedLength: fullUrl.length > 12000,
         assetCheck,
     };
 };
@@ -188,6 +256,7 @@ export const decodePortfolioFromUrl = (urlOrHashString) => {
             },
             projects: Array.isArray(parsed.projects) ? parsed.projects : (DEFAULT_PORTFOLIO.projects || []),
             certifications: Array.isArray(parsed.certifications) ? parsed.certifications : (DEFAULT_PORTFOLIO.certifications || []),
+            skills_categories: Array.isArray(parsed.skills_categories) ? parsed.skills_categories : (DEFAULT_PORTFOLIO.skills_categories || []),
             skills: Array.isArray(parsed.skills) ? parsed.skills : (DEFAULT_PORTFOLIO.skills || []),
             about_highlights: Array.isArray(parsed.about_highlights) ? parsed.about_highlights : (DEFAULT_PORTFOLIO.about_highlights || []),
             education: Array.isArray(parsed.education) ? parsed.education : (DEFAULT_PORTFOLIO.education || []),

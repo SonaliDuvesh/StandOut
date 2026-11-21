@@ -12,11 +12,13 @@ const PublishModal = ({
     isUpdate = false,
 }) => {
     const [copied, setCopied] = useState(false);
+    const [urlFormat, setUrlFormat] = useState('short'); // 'short' (recommended, clean) | 'portable' (with data hash)
 
     if (!isOpen || !publishResult) return null;
 
     const {
         slug,
+        shortUrl,
         fullUrl,
         payloadLength,
         rawBytes,
@@ -26,9 +28,13 @@ const PublishModal = ({
         assetCheck
     } = publishResult;
 
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const cleanShortUrl = shortUrl || `${origin}/p/${slug}`;
+    const activeUrl = urlFormat === 'short' ? cleanShortUrl : (fullUrl || cleanShortUrl);
+
     const handleCopy = async () => {
         try {
-            await navigator.clipboard.writeText(fullUrl);
+            await navigator.clipboard.writeText(activeUrl);
             setCopied(true);
             setTimeout(() => setCopied(false), 2500);
         } catch (err) {
@@ -37,7 +43,7 @@ const PublishModal = ({
     };
 
     const handleOpenLive = () => {
-        window.open(fullUrl, '_blank', 'noopener,noreferrer');
+        window.open(activeUrl, '_blank', 'noopener,noreferrer');
     };
 
     const modalContent = (
@@ -48,7 +54,7 @@ const PublishModal = ({
             aria-modal="true"
         >
             <div
-                className="relative w-full max-w-xl glass bg-white/95 dark:bg-navy-900/95 border border-soft-cream-300 dark:border-navy-700 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 animate-scale-up text-navy-900 dark:text-soft-cream-50"
+                className="relative w-full max-w-xl glass bg-white/95 dark:bg-navy-900/95 border border-soft-cream-300 dark:border-navy-700 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5 animate-scale-up text-navy-900 dark:text-soft-cream-50"
                 onClick={(e) => e.stopPropagation()}
             >
                 <button
@@ -72,25 +78,48 @@ const PublishModal = ({
                             {isUpdate ? 'Published Portfolio Updated!' : 'Your Portfolio is Live!'}
                         </h2>
                         <p className="text-xs sm:text-sm text-navy-600 dark:text-soft-cream-300 mt-1">
-                            Your personalized portfolio is generated and ready to share worldwide.
+                            Your personalized portfolio URL is generated and ready to share anywhere.
                         </p>
                     </div>
                 </div>
 
-                <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs font-semibold text-navy-600 dark:text-soft-cream-400">
+                <div className="space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-semibold text-navy-600 dark:text-soft-cream-400">
                         <span className="flex items-center gap-1.5">
                             <LinkIcon className="w-3.5 h-3.5 text-golden-500" />
-                            <span>Personalized Shareable URL</span>
+                            <span>Shareable Link Format:</span>
                         </span>
-                        <span className="font-mono text-[11px] px-2 py-0.5 rounded-md bg-soft-cream-200 dark:bg-navy-800 text-navy-700 dark:text-soft-cream-300">
-                            Identifier: <strong className="text-golden-600 dark:text-golden-400">{slug}</strong>
-                        </span>
+
+                        {/* Format Switcher Pills */}
+                        <div className="flex items-center gap-1 p-1 rounded-xl bg-soft-cream-200 dark:bg-navy-800 self-start sm:self-auto">
+                            <button
+                                type="button"
+                                onClick={() => setUrlFormat('short')}
+                                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                                    urlFormat === 'short'
+                                        ? 'bg-white dark:bg-navy-900 text-golden-600 dark:text-golden-400 shadow-xs'
+                                        : 'text-navy-600 dark:text-soft-cream-400 hover:text-navy-900 dark:hover:text-soft-cream-200'
+                                }`}
+                            >
+                                Clean Short URL (Recommended)
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setUrlFormat('portable')}
+                                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                                    urlFormat === 'portable'
+                                        ? 'bg-white dark:bg-navy-900 text-golden-600 dark:text-golden-400 shadow-xs'
+                                        : 'text-navy-600 dark:text-soft-cream-400 hover:text-navy-900 dark:hover:text-soft-cream-200'
+                                }`}
+                            >
+                                Portable Offline Link
+                            </button>
+                        </div>
                     </div>
 
                     <div className="flex items-center gap-2 p-2 sm:p-2.5 rounded-2xl bg-soft-cream-100 dark:bg-navy-950/80 border border-soft-cream-300 dark:border-navy-800">
                         <div className="flex-1 font-mono text-xs sm:text-sm text-navy-800 dark:text-soft-cream-200 px-2 truncate select-all">
-                            {fullUrl}
+                            {activeUrl}
                         </div>
                         <button
                             type="button"
@@ -114,16 +143,25 @@ const PublishModal = ({
                             )}
                         </button>
                     </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-navy-500 dark:text-soft-cream-400 px-1">
+                        <span>
+                            Length: <strong className={urlFormat === 'short' ? 'text-emerald-600 dark:text-emerald-400 font-bold' : ''}>{activeUrl.length} characters</strong>
+                        </span>
+                        <span className="font-mono text-[11px]">
+                            Slug: <strong className="text-golden-600 dark:text-golden-400">{slug}</strong>
+                        </span>
+                    </div>
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex flex-col sm:flex-row gap-3 pt-1">
                     <button
                         type="button"
                         onClick={handleOpenLive}
                         className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500 via-golden-500 to-amber-600 hover:from-amber-600 hover:to-golden-700 text-white font-bold text-xs sm:text-sm inline-flex items-center justify-center gap-2 shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
                     >
                         <ExternalLink className="w-4 h-4" />
-                        <span>Open Published Portfolio in New Tab</span>
+                        <span>Open Live Portfolio</span>
                     </button>
                     <button
                         type="button"
@@ -143,18 +181,18 @@ const PublishModal = ({
                     </div>
                 )}
 
-                <div className="pt-4 border-t border-soft-cream-200 dark:border-navy-800/80 space-y-2 text-[11px] text-navy-500 dark:text-soft-cream-400">
+                <div className="pt-3 border-t border-soft-cream-200 dark:border-navy-800/80 space-y-1.5 text-[11px] text-navy-500 dark:text-soft-cream-400">
                     <div className="flex items-center justify-between flex-wrap gap-1 font-mono">
                         <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                             <ShieldCheck className="w-3.5 h-3.5" />
-                            <span>100% Client-Side URL-Safe Encoding</span>
+                            <span>Ultra-Compact Minified Delta Compression</span>
                         </span>
                         <span>
-                            {Math.round(rawBytes / 1024 * 10) / 10} KB JSON → <strong>{Math.round(compressedBytes / 1024 * 10) / 10} KB</strong> (Deflate-Raw)
+                            {Math.round((rawBytes || 0) / 1024 * 10) / 10} KB JSON → <strong>{Math.round((compressedBytes || 0) / 1024 * 10) / 10} KB</strong> (Deflate-Raw)
                         </span>
                     </div>
                     <p className="leading-relaxed">
-                        The entire portfolio configuration is compressed into the URL fragment. Visitors clicking this link open your portfolio within the application with all animations, 3D runways, and styles intact, without needing a backend database or downloading files.
+                        The clean short URL is concise and easy to share on resumes, LinkedIn, and social media. Both local cache and backend synchronization ensure visitors see your complete customized portfolio instantly.
                     </p>
                 </div>
             </div>

@@ -81,8 +81,8 @@ const PortfolioView = ({ isPreview = false, isPublishedView = false }) => {
 
     const handleShare = () => {
         const url = isPublishedView
-            ? window.location.href
-            : window.location.origin + '/' + (portfolio.username || 'username');
+            ? (window.location.origin + '/p/' + (slug || portfolio.published_slug || portfolio.username || 'username'))
+            : (window.location.origin + '/' + (portfolio.username || 'username'));
         navigator.clipboard?.writeText(url);
         setShareCopied(true);
         setTimeout(() => setShareCopied(false), 2500);
