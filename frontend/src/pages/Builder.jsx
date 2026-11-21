@@ -133,8 +133,8 @@ const Builder = () => {
         await savePortfolio();
     };
 
-    const handlePublish = () => {
-        const res = publishPortfolio();
+    const handlePublish = async () => {
+        const res = await publishPortfolio();
         setPublishResult(res);
         setShowPublishModal(true);
     };
@@ -199,8 +199,8 @@ const Builder = () => {
                         {publishedSlug && (
                             <button
                                 type="button"
-                                onClick={() => {
-                                    const res = publishPortfolio();
+                                onClick={async () => {
+                                    const res = await publishPortfolio();
                                     setPublishResult(res);
                                     setShowPublishModal(true);
                                 }}

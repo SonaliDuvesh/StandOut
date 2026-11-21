@@ -908,7 +908,7 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
         }
     };
 
-    const publishPortfolio = useCallback((customPortfolio = null) => {
+    const publishPortfolio = useCallback(async (customPortfolio = null) => {
         const current = customPortfolio || portfolio;
         const slug = current.published_slug || publishedSlug || generatePortfolioSlug(current.full_name || current.username);
 
@@ -940,18 +940,32 @@ export const PortfolioProvider = ({ children, initialUsername = 'username' }) =>
         }
 
         // Save to Supabase for global persistence across any visitor / device
+        let supabaseSync = { configured: isSupabaseConfigured(), success: false, error: null };
         if (isSupabaseConfigured()) {
-            savePortfolioToSupabase(encodeResult.slug, currentWithSlug).catch((err) => {
+            try {
+                const sbRes = await savePortfolioToSupabase(encodeResult.slug, currentWithSlug);
+                supabaseSync = {
+                    configured: true,
+                    success: Boolean(sbRes && sbRes.success),
+                    error: sbRes && sbRes.error ? sbRes.error : null
+                };
+                if (currentWithSlug.username && currentWithSlug.username !== encodeResult.slug) {
+                    savePortfolioToSupabase(currentWithSlug.username, currentWithSlug).catch(() => {});
+                }
+            } catch (err) {
                 console.warn('Supabase publish background sync notice:', err);
-            });
-            if (currentWithSlug.username && currentWithSlug.username !== encodeResult.slug) {
-                savePortfolioToSupabase(currentWithSlug.username, currentWithSlug).catch(() => {});
+                supabaseSync = {
+                    configured: true,
+                    success: false,
+                    error: err.message || 'Supabase save error'
+                };
             }
         }
 
         return {
             ...encodeResult,
             portfolioData: currentWithSlug,
+            supabaseSync,
         };
     }, [portfolio, publishedSlug]);
 

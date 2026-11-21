@@ -86,10 +86,10 @@ export const testSupabaseConnection = async () => {
 export const savePortfolioToSupabase = async (identifier, portfolioData) => {
     const client = getSupabaseClient();
     if (!client) {
-        console.warn('[StandOut Supabase] Supabase is not connected. (VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is missing)');
-        return false;
+        console.warn('[StandOut Supabase] Supabase is not connected. (URL or key is missing in environment)');
+        return { success: false, error: 'Supabase credentials not configured or not loaded in build' };
     }
-    if (!portfolioData) return false;
+    if (!portfolioData) return { success: false, error: 'No portfolio data to save' };
 
     const primarySlug = (
         portfolioData.published_slug ||
@@ -126,7 +126,7 @@ export const savePortfolioToSupabase = async (identifier, portfolioData) => {
 
         if (error) {
             console.error('[StandOut Supabase] Save failed with error:', error.message, error);
-            return false;
+            return { success: false, error: error.message };
         }
 
         console.log('[StandOut Supabase] ✅ Successfully saved to Supabase! Row slug:', primarySlug);
@@ -147,10 +147,10 @@ export const savePortfolioToSupabase = async (identifier, portfolioData) => {
                 );
         }
 
-        return true;
+        return { success: true, slug: primarySlug };
     } catch (err) {
         console.error('[StandOut Supabase] Save exception:', err.message || err);
-        return false;
+        return { success: false, error: err.message || 'Network or database error' };
     }
 };
 

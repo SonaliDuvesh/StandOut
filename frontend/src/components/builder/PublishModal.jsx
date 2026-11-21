@@ -104,6 +104,25 @@ const PublishModal = ({
                             )}
                         </button>
                     </div>
+
+                    {publishResult.supabaseSync && (
+                        <div className="pt-1">
+                            {publishResult.supabaseSync.success ? (
+                                <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400 font-medium px-1">
+                                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse inline-block" />
+                                    <span>Saved online to Supabase cloud database</span>
+                                </div>
+                            ) : !publishResult.supabaseSync.configured ? (
+                                <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300/80 dark:border-amber-800/80 text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+                                    <span className="font-bold">⚠️ Cloud sync pending:</span> Redeploy on Vercel to activate your <code>URL</code> and <code>key</code> environment variables.
+                                </div>
+                            ) : (
+                                <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-300/80 dark:border-rose-800/80 text-[11px] text-rose-800 dark:text-rose-300 leading-relaxed">
+                                    <span className="font-bold">⚠️ Supabase notice:</span> {publishResult.supabaseSync.error || 'Table not found'}. (Run the SQL script in Supabase SQL Editor if table is missing).
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-3 pt-2">
